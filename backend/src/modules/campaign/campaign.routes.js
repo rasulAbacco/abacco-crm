@@ -1,0 +1,28 @@
+import { Router } from 'express';
+import * as c from './campaign.controller.js';
+import * as v from './campaign.validator.js';
+import { validate } from '../../middleware/validationMiddleware.js';
+import { requireAuth } from '../../middleware/authMiddleware.js';
+import { salesScope } from '../../middleware/salesIdMiddleware.js';
+
+const router = Router();
+const p = validate({ params: v.idParams });
+router.use(requireAuth, salesScope);
+router.get('/', validate({ query: v.listQuery }), c.list);
+router.get('/eligible-smtp', c.eligibleSmtp);
+router.post('/', validate({ body: v.createSchema }), c.create);
+router.get('/:id', p, c.get);
+router.put('/:id', validate({ params: v.idParams, body: v.updateSchema }), c.update);
+router.delete('/:id', p, c.remove);
+router.post('/:id/duplicate', p, c.duplicate);
+router.get('/:id/preview', p, c.preview);
+router.post('/:id/send', p, c.send);
+router.post('/:id/pause', p, c.pause);
+router.post('/:id/resume', p, c.resume);
+router.post('/:id/cancel', p, c.cancel);
+router.post('/:id/unschedule', p, c.unschedule);
+router.post('/:id/retry-failed', p, c.retryFailed);
+router.get('/:id/statistics', p, c.statistics);
+router.get('/:id/recipients', validate({ params: v.idParams, query: v.recipientsQuery }), c.recipients);
+router.post('/:id/test', validate({ params: v.idParams, body: v.testSchema }), c.test);
+export default router;

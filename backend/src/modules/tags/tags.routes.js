@@ -1,0 +1,11 @@
+import { Router } from 'express';
+import * as c from './tags.controller.js';
+import * as v from './tags.validator.js';
+import { validate } from '../../middleware/validationMiddleware.js';
+import { requireAuth } from '../../middleware/authMiddleware.js';
+const router = Router();
+router.use(requireAuth);
+router.get('/', c.list);
+router.put('/:id', validate({ params: v.idParams, body: v.updateSchema }), c.update);
+router.delete('/:id', validate({ params: v.idParams }), c.remove);
+export default router;

@@ -1,0 +1,16 @@
+import { Router } from 'express';
+import * as c from './templates.controller.js';
+import * as v from './templates.validator.js';
+import { validate } from '../../middleware/validationMiddleware.js';
+import { requireAuth } from '../../middleware/authMiddleware.js';
+import { salesScope } from '../../middleware/salesIdMiddleware.js';
+const router = Router();
+router.use(requireAuth, salesScope);
+router.get('/', validate({ query: v.listQuery }), c.list);
+router.post('/', validate({ body: v.createSchema }), c.create);
+router.post('/preview', validate({ body: v.previewSchema }), c.preview);
+router.get('/:id', validate({ params: v.idParams }), c.get);
+router.put('/:id', validate({ params: v.idParams, body: v.updateSchema }), c.update);
+router.delete('/:id', validate({ params: v.idParams }), c.remove);
+router.post('/:id/duplicate', validate({ params: v.idParams }), c.duplicate);
+export default router;

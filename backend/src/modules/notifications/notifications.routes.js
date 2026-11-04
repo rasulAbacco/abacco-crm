@@ -1,0 +1,11 @@
+import { Router } from 'express';
+import * as c from './notifications.controller.js';
+import * as v from './notifications.validator.js';
+import { validate } from '../../middleware/validationMiddleware.js';
+import { requireAuth } from '../../middleware/authMiddleware.js';
+const router = Router();
+router.use(requireAuth);
+router.get('/', validate({ query: v.listQuery }), c.list);
+router.post('/read-all', c.readAll);
+router.post('/:id/read', validate({ params: v.idParams }), c.read);
+export default router;

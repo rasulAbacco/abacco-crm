@@ -1,0 +1,14 @@
+import * as s from './automations.service.js';
+import { ok, created, paginated } from '../../utils/apiResponse.js';
+import { requestContext } from '../../services/audit/auditService.js';
+const id = (req) => req.valid.params.id;
+export const list = async (req, res) => { const q = req.valid.query; const r = await s.list(req.scope, q); return paginated(res, r.items, { ...q, total: r.total }); };
+export const get = async (req, res) => ok(res, await s.get(req.scope, id(req)));
+export const create = async (req, res) => created(res, await s.create(req.scope, req.valid.body, requestContext(req)));
+export const update = async (req, res) => ok(res, await s.update(req.scope, id(req), req.valid.body, requestContext(req)));
+export const activate = async (req, res) => ok(res, await s.setStatus(req.scope, id(req), 'ACTIVE', requestContext(req)));
+export const pause = async (req, res) => ok(res, await s.setStatus(req.scope, id(req), 'PAUSED', requestContext(req)));
+export const remove = async (req, res) => ok(res, await s.remove(req.scope, id(req), requestContext(req)));
+export const enroll = async (req, res) => ok(res, await s.enrollManual(req.scope, id(req), req.valid.body, requestContext(req)));
+export const enrollments = async (req, res) => { const q = req.valid.query; const r = await s.enrollments(req.scope, id(req), q); return paginated(res, r.items, { ...q, total: r.total }); };
+export const executions = async (req, res) => { const q = req.valid.query; const r = await s.executions(req.scope, id(req), q); return paginated(res, r.items, { ...q, total: r.total }); };

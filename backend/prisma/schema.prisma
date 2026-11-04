@@ -1,0 +1,1466 @@
+// =============================================================================
+// Abacco CRM — Prisma schema (PostgreSQL)
+//
+// Conventions
+//  * Every timestamp is timestamptz and stored in UTC (process TZ=UTC).
+//  * Every sales record carries accountId + ownerWorkspaceId (the Sales ID).
+//  * Money is stored as integer minor units (BigInt) + ISO-4217 currency.
+//  * Soft-deleted rows have deletedAt set; uniqueness ignores them (partial indexes).
+//  * Emails are matched on emailNormalized (trimmed + lower-cased).
+// =============================================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["partialIndexes"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ----------------------------------------------------------------------------- enums
+
+enum WorkspaceStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  UNQUALIFIED
+  CONVERTED
+  LOST
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TimezoneSource {
+  EXPLICIT
+  PHONE
+  COUNTRY
+  DEFAULT
+}
+
+enum StageKind {
+  OPEN
+  WON
+  LOST
+}
+
+enum DealStatus {
+  OPEN
+  WON
+  LOST
+}
+
+enum TaskType {
+  TODO
+  CALL
+  EMAIL
+  MEETING
+  FOLLOW_UP
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+  CANCELLED
+}
+
+enum ActivityType {
+  NOTE
+  CALL
+  EMAIL
+  MEETING
+  TASK
+  STATUS_CHANGE
+  SHARE
+  TRANSFER
+  SYSTEM
+}
+
+enum ShareableEntity {
+  LEAD
+  CONTACT
+  COMPANY
+  DEAL
+}
+
+enum SharePermission {
+  READ
+  COLLABORATE
+}
+
+enum CustomFieldType {
+  TEXT
+  NUMBER
+  DATE
+  BOOLEAN
+  SELECT
+  MULTI_SELECT
+  URL
+}
+
+enum SmtpProvider {
+  GMAIL
+  REDIFFMAIL
+  ZOHO
+  YAHOO
+  AMAZON_SES
+  CUSTOM
+}
+
+enum SmtpSecurity {
+  SSL
+  STARTTLS
+  NONE
+}
+
+enum SmtpAuthType {
+  PASSWORD
+  OAUTH2
+}
+
+enum SmtpHealth {
+  UNTESTED
+  HEALTHY
+  UNHEALTHY
+  AUTH_FAILED
+}
+
+enum UsageWindow {
+  HOUR
+  DAY
+}
+
+enum ListMemberStatus {
+  SUBSCRIBED
+  UNSUBSCRIBED
+  BOUNCED
+  REMOVED
+}
+
+enum SuppressionReason {
+  HARD_BOUNCE
+  COMPLAINT
+  UNSUBSCRIBED
+  MANUAL
+  ERASURE
+  INVALID
+}
+
+enum ConsentStatus {
+  GRANTED
+  WITHDRAWN
+}
+
+enum LegalRegime {
+  GDPR
+  UK_GDPR
+  CASL
+  CAN_SPAM
+  DPDP
+  SPAM_ACT
+  OTHER
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  QUEUED
+  SENDING
+  PAUSED
+  COMPLETED
+  COMPLETED_WITH_ERRORS
+  FAILED
+  CANCELLED
+}
+
+enum RecipientStatus {
+  PENDING
+  QUEUED
+  SENDING
+  SENT
+  FAILED
+  BOUNCED
+  SUPPRESSED
+  UNSUBSCRIBED
+  SKIPPED
+  CANCELLED
+}
+
+enum ScheduleMode {
+  IMMEDIATE
+  FIXED_TIME
+  RECIPIENT_LOCAL
+}
+
+enum PastTimeBehaviour {
+  SEND_NOW
+  NEXT_DAY
+  SKIP
+}
+
+enum EmailEventType {
+  ACCEPTED
+  DELIVERED
+  BOUNCED_HARD
+  BOUNCED_SOFT
+  COMPLAINED
+  OPENED
+  CLICKED
+  UNSUBSCRIBED
+  FAILED
+  REJECTED
+}
+
+enum EventSource {
+  SMTP
+  SES_SNS
+  IMAP_BOUNCE
+  TRACKING_PIXEL
+  LINK_REDIRECT
+  UNSUBSCRIBE_LINK
+  LIST_UNSUBSCRIBE_POST
+  MANUAL
+}
+
+enum AutomationStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum AutomationTrigger {
+  LEAD_CREATED
+  CONTACT_CREATED
+  LIST_JOINED
+  LEAD_STATUS_CHANGED
+  DATE_FIELD
+  CAMPAIGN_EVENT
+  MANUAL
+}
+
+enum AutomationStepType {
+  SEND_EMAIL
+  WAIT
+  CONDITION
+  CREATE_TASK
+  UPDATE_FIELD
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  COMPLETED
+  EXITED
+  FAILED
+}
+
+enum ExecutionStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+  SKIPPED
+}
+
+enum ImportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  COMPLETED_WITH_ERRORS
+  FAILED
+}
+
+enum ImportEntity {
+  LEAD
+  CONTACT
+  COMPANY
+  LIST_MEMBER
+}
+
+// ----------------------------------------------------------------------------- identity
+
+model Account {
+  id              String   @id @default(uuid()) @db.Uuid
+  name            String
+  defaultCurrency String   @default("INR") @db.Char(3)
+  defaultTimezone String   @default("Asia/Kolkata")
+  defaultLocale   String   @default("en-IN")
+  legalName       String?
+  postalAddress   String?
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+
+  users          User[]
+  workspaces     SalesWorkspace[]
+  leads          Lead[]
+  contacts       Contact[]
+  companies      Company[]
+  deals          Deal[]
+  pipelines      Pipeline[]
+  tasks          Task[]
+  notes          Note[]
+  activities     Activity[]
+  tags           Tag[]
+  customFields   CustomFieldDefinition[]
+  shares         RecordShare[]
+  transfers      RecordTransferHistory[]
+  auditLogs      AuditLog[]
+  smtpAccounts   SmtpAccount[]
+  emailLists     EmailList[]
+  templates      EmailTemplate[]
+  suppressions   Suppression[]
+  unsubscribes   Unsubscribe[]
+  consents       ConsentRecord[]
+  countries      CountryProfile[]
+  holidays       Holiday[]
+  campaigns      Campaign[]
+  emailEvents    EmailEvent[]
+  automations    Automation[]
+  notifications  Notification[]
+  systemSettings SystemSetting[]
+  importJobs     ImportJob[]
+
+  @@map("accounts")
+}
+
+model User {
+  id                String    @id @default(uuid()) @db.Uuid
+  accountId         String    @db.Uuid
+  email             String    @unique
+  passwordHash      String
+  name              String
+  timezone          String?
+  locale            String?
+  isActive          Boolean   @default(true)
+  failedLoginCount  Int       @default(0)
+  lockedUntil       DateTime? @db.Timestamptz(3)
+  lastLoginAt       DateTime? @db.Timestamptz(3)
+  passwordChangedAt DateTime? @db.Timestamptz(3)
+  createdAt         DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime  @updatedAt @db.Timestamptz(3)
+
+  account        Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  refreshTokens  RefreshToken[]
+  resetTokens    PasswordResetToken[]
+  auditLogs      AuditLog[]
+  notifications  Notification[]
+  createdShares  RecordShare[]        @relation("ShareCreatedBy")
+  transfers      RecordTransferHistory[]
+  notes          Note[]
+  activities     Activity[]
+  campaigns      Campaign[]
+  importJobs     ImportJob[]
+
+  @@index([accountId])
+  @@map("users")
+}
+
+model RefreshToken {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @db.Uuid
+  familyId     String    @db.Uuid
+  tokenHash    String    @unique
+  expiresAt    DateTime  @db.Timestamptz(3)
+  revokedAt    DateTime? @db.Timestamptz(3)
+  revokeReason String?
+  replacedById String?   @db.Uuid
+  userAgent    String?
+  ip           String?
+  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@map("refresh_tokens")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique
+  expiresAt DateTime  @db.Timestamptz(3)
+  usedAt    DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+// ----------------------------------------------------------------------------- Sales IDs (workspaces)
+
+model SalesWorkspace {
+  id                  String          @id @default(uuid()) @db.Uuid
+  accountId           String          @db.Uuid
+  code                String // e.g. SID-001, unique per account, never reused
+  name                String
+  description         String?
+  status              WorkspaceStatus @default(ACTIVE)
+  isDefault           Boolean         @default(false)
+  color               String?
+  defaultCurrency     String?         @db.Char(3) // falls back to Account.defaultCurrency
+  defaultTimezone     String? // falls back to Account.defaultTimezone
+  senderLegalName     String? // required in campaign footers before sending
+  senderPostalAddress String?
+  createdAt           DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime        @updatedAt @db.Timestamptz(3)
+  deletedAt           DateTime?       @db.Timestamptz(3)
+
+  account         Account                  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  settings        SalesWorkspaceSettings?
+  leads           Lead[]
+  contacts        Contact[]
+  companies       Company[]
+  deals           Deal[]
+  pipelines       Pipeline[]
+  tasks           Task[]
+  notes           Note[]
+  activities      Activity[]
+  sharesOut       RecordShare[]            @relation("ShareOwner")
+  sharesIn        RecordShare[]            @relation("ShareTarget")
+  transfersOut    RecordTransferHistory[]  @relation("TransferFrom")
+  transfersIn     RecordTransferHistory[]  @relation("TransferTo")
+  smtpAssignments SmtpAccountWorkspace[]
+  emailLists      EmailList[]
+  templates       EmailTemplate[]
+  campaigns       Campaign[]
+  automations     Automation[]
+  auditLogs       AuditLog[]
+  importJobs      ImportJob[]
+  emailEvents     EmailEvent[]
+  unsubscribes    Unsubscribe[]
+
+  @@unique([accountId, code])
+  @@unique([accountId, name], map: "sales_workspaces_account_name_live_key", where: raw("\"deletedAt\" IS NULL"))
+  @@unique([accountId], map: "sales_workspaces_one_default_key", where: raw("\"isDefault\" = true AND \"deletedAt\" IS NULL"))
+  @@index([accountId, status])
+  @@map("sales_workspaces")
+}
+
+model SalesWorkspaceSettings {
+  id                 String   @id @default(uuid()) @db.Uuid
+  workspaceId        String   @unique @db.Uuid
+  businessHoursStart String   @default("09:00") // local HH:mm
+  businessHoursEnd   String   @default("18:00")
+  businessDays       Int[]    @default([1, 2, 3, 4, 5]) // ISO weekday 1=Mon … 7=Sun
+  emailFooterHtml    String?
+  leadScoringRules   Json?
+  preferences        Json?
+  createdAt          DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime @updatedAt @db.Timestamptz(3)
+
+  workspace SalesWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@map("sales_workspace_settings")
+}
+
+// ----------------------------------------------------------------------------- sales CRM
+
+model Company {
+  id               String    @id @default(uuid()) @db.Uuid
+  accountId        String    @db.Uuid
+  ownerWorkspaceId String    @db.Uuid
+  name             String
+  nameNormalized   String
+  domain           String?
+  website          String?
+  industry         String?
+  size             String?
+  email            String?
+  phoneE164        String?
+  phoneRaw         String?
+  addressLine1     String?
+  addressLine2     String?
+  city             String?
+  region           String?
+  postalCode       String?
+  countryCode      String?   @db.Char(2)
+  timezone         String?
+  description      String?
+  customFields     Json?
+  createdAt        DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt        DateTime? @db.Timestamptz(3)
+
+  account        Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  ownerWorkspace SalesWorkspace @relation(fields: [ownerWorkspaceId], references: [id], onDelete: Restrict)
+  contacts       Contact[]
+  leads          Lead[]
+  deals          Deal[]
+  tasks          Task[]
+  notes          Note[]
+  activities     Activity[]
+
+  @@unique([ownerWorkspaceId, nameNormalized], map: "companies_workspace_name_live_key", where: raw("\"deletedAt\" IS NULL"))
+  @@index([accountId, ownerWorkspaceId, deletedAt])
+  @@index([ownerWorkspaceId, countryCode])
+  @@index([domain])
+  @@map("companies")
+}
+
+model Contact {
+  id               String         @id @default(uuid()) @db.Uuid
+  accountId        String         @db.Uuid
+  ownerWorkspaceId String         @db.Uuid
+  companyId        String?        @db.Uuid
+  firstName        String?
+  lastName         String?
+  email            String?
+  emailNormalized  String?
+  phoneE164        String?
+  phoneRaw         String?
+  designation      String?
+  countryCode      String?        @db.Char(2)
+  region           String?
+  city             String?
+  timezone         String?
+  timezoneSource   TimezoneSource @default(DEFAULT)
+  locale           String?
+  source           String?
+  description      String?
+  customFields     Json?
+  lastContactedAt  DateTime?      @db.Timestamptz(3)
+  createdAt        DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime       @updatedAt @db.Timestamptz(3)
+  deletedAt        DateTime?      @db.Timestamptz(3)
+
+  account          Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  ownerWorkspace   SalesWorkspace      @relation(fields: [ownerWorkspaceId], references: [id], onDelete: Restrict)
+  company          Company?            @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  convertedLeads   Lead[]
+  deals            Deal[]
+  tasks            Task[]
+  notes            Note[]
+  activities       Activity[]
+  listMemberships  EmailListContact[]
+  consents         ConsentRecord[]
+  campaignRecips   CampaignRecipient[]
+  enrollments      AutomationEnrollment[]
+
+  @@unique([ownerWorkspaceId, emailNormalized], map: "contacts_workspace_email_live_key", where: raw("\"deletedAt\" IS NULL AND \"emailNormalized\" IS NOT NULL"))
+  @@index([accountId, ownerWorkspaceId, deletedAt])
+  @@index([ownerWorkspaceId, countryCode])
+  @@index([accountId, emailNormalized])
+  @@index([companyId])
+  @@map("contacts")
+}
+
+model Lead {
+  id               String         @id @default(uuid()) @db.Uuid
+  accountId        String         @db.Uuid
+  ownerWorkspaceId String         @db.Uuid
+  companyId        String?        @db.Uuid
+  contactId        String?        @db.Uuid // set when converted
+  firstName        String?
+  lastName         String?
+  fullName         String
+  email            String?
+  emailNormalized  String?
+  phoneE164        String?
+  phoneRaw         String?
+  companyName      String?
+  designation      String?
+  website          String?
+  countryCode      String?        @db.Char(2)
+  region           String?
+  city             String?
+  timezone         String?
+  timezoneSource   TimezoneSource @default(DEFAULT)
+  locale           String?
+  source           String?
+  status           LeadStatus     @default(NEW)
+  priority         Priority       @default(MEDIUM)
+  score            Int            @default(0)
+  description      String?
+  customFields     Json?
+  convertedAt      DateTime?      @db.Timestamptz(3)
+  lastActivityAt   DateTime?      @db.Timestamptz(3)
+  createdAt        DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime       @updatedAt @db.Timestamptz(3)
+  deletedAt        DateTime?      @db.Timestamptz(3)
+
+  account        Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  ownerWorkspace SalesWorkspace @relation(fields: [ownerWorkspaceId], references: [id], onDelete: Restrict)
+  company        Company?       @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  contact        Contact?       @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  deals          Deal[]
+  tasks          Task[]
+  notes          Note[]
+  activities     Activity[]
+  enrollments    AutomationEnrollment[]
+
+  @@index([accountId, ownerWorkspaceId, deletedAt, createdAt])
+  @@index([ownerWorkspaceId, status])
+  @@index([ownerWorkspaceId, source])
+  @@index([ownerWorkspaceId, countryCode])
+  @@index([accountId, emailNormalized])
+  @@map("leads")
+}
+
+model Pipeline {
+  id          String   @id @default(uuid()) @db.Uuid
+  accountId   String   @db.Uuid
+  workspaceId String   @db.Uuid
+  name        String
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+
+  account   Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  workspace SalesWorkspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  stages    PipelineStage[]
+  deals     Deal[]
+
+  @@unique([workspaceId, name])
+  @@map("pipelines")
+}
+
+model PipelineStage {
+  id          String    @id @default(uuid()) @db.Uuid
+  pipelineId  String    @db.Uuid
+  name        String
+  position    Int
+  probability Int       @default(0) // 0-100
+  kind        StageKind @default(OPEN)
+  color       String?
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(3)
+
+  pipeline Pipeline @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  deals    Deal[]
+
+  @@unique([pipelineId, name])
+  @@index([pipelineId, position])
+  @@map("pipeline_stages")
+}
+
+model Deal {
+  id                String     @id @default(uuid()) @db.Uuid
+  accountId         String     @db.Uuid
+  ownerWorkspaceId  String     @db.Uuid
+  pipelineId        String     @db.Uuid
+  stageId           String     @db.Uuid
+  leadId            String?    @db.Uuid
+  contactId         String?    @db.Uuid
+  companyId         String?    @db.Uuid
+  title             String
+  amountMinor       BigInt     @default(0) // entered manually; never converted
+  currency          String     @db.Char(3)
+  probability       Int? // overrides stage probability when set
+  expectedCloseDate DateTime?  @db.Date
+  status            DealStatus @default(OPEN)
+  closedAt          DateTime?  @db.Timestamptz(3)
+  lostReason        String?
+  position          Float      @default(0) // ordering within a Kanban column
+  description       String?
+  customFields      Json?
+  createdAt         DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime   @updatedAt @db.Timestamptz(3)
+  deletedAt         DateTime?  @db.Timestamptz(3)
+
+  account        Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  ownerWorkspace SalesWorkspace @relation(fields: [ownerWorkspaceId], references: [id], onDelete: Restrict)
+  pipeline       Pipeline       @relation(fields: [pipelineId], references: [id], onDelete: Restrict)
+  stage          PipelineStage  @relation(fields: [stageId], references: [id], onDelete: Restrict)
+  lead           Lead?          @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  contact        Contact?       @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  company        Company?       @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  tasks          Task[]
+  notes          Note[]
+  activities     Activity[]
+
+  @@index([accountId, ownerWorkspaceId, deletedAt])
+  @@index([ownerWorkspaceId, status, currency])
+  @@index([stageId, position])
+  @@index([leadId])
+  @@index([contactId])
+  @@index([companyId])
+  @@map("deals")
+}
+
+model Task {
+  id               String     @id @default(uuid()) @db.Uuid
+  accountId        String     @db.Uuid
+  ownerWorkspaceId String     @db.Uuid
+  title            String
+  description      String?
+  type             TaskType   @default(TODO)
+  status           TaskStatus @default(TODO)
+  priority         Priority   @default(MEDIUM)
+  dueAt            DateTime?  @db.Timestamptz(3)
+  remindAt         DateTime?  @db.Timestamptz(3)
+  reminderSentAt   DateTime?  @db.Timestamptz(3)
+  completedAt      DateTime?  @db.Timestamptz(3)
+  leadId           String?    @db.Uuid
+  contactId        String?    @db.Uuid
+  companyId        String?    @db.Uuid
+  dealId           String?    @db.Uuid
+  createdAt        DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime   @updatedAt @db.Timestamptz(3)
+  deletedAt        DateTime?  @db.Timestamptz(3)
+
+  account        Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  ownerWorkspace SalesWorkspace @relation(fields: [ownerWorkspaceId], references: [id], onDelete: Restrict)
+  lead           Lead?          @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  contact        Contact?       @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  company        Company?       @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  deal           Deal?          @relation(fields: [dealId], references: [id], onDelete: SetNull)
+
+  @@index([accountId, ownerWorkspaceId, status, dueAt])
+  @@index([remindAt, reminderSentAt])
+  @@index([leadId])
+  @@index([contactId])
+  @@index([dealId])
+  @@map("tasks")
+}
+
+// Notes and activities hang off exactly one parent record (enforced by a CHECK
+// constraint in the migration). They move with their parent on transfer.
+model Note {
+  id          String    @id @default(uuid()) @db.Uuid
+  accountId   String    @db.Uuid
+  workspaceId String    @db.Uuid // Sales ID in which the note was written
+  authorId    String?   @db.Uuid
+  body        String
+  leadId      String?   @db.Uuid
+  contactId   String?   @db.Uuid
+  companyId   String?   @db.Uuid
+  dealId      String?   @db.Uuid
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt   DateTime? @db.Timestamptz(3)
+
+  account   Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  workspace SalesWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  author    User?          @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  lead      Lead?          @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  contact   Contact?       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  company   Company?       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  deal      Deal?          @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  @@index([leadId, createdAt])
+  @@index([contactId, createdAt])
+  @@index([companyId, createdAt])
+  @@index([dealId, createdAt])
+  @@map("notes")
+}
+
+model Activity {
+  id          String       @id @default(uuid()) @db.Uuid
+  accountId   String       @db.Uuid
+  workspaceId String       @db.Uuid
+  actorId     String?      @db.Uuid
+  type        ActivityType
+  subject     String
+  body        String?
+  metadata    Json?
+  occurredAt  DateTime     @default(now()) @db.Timestamptz(3)
+  leadId      String?      @db.Uuid
+  contactId   String?      @db.Uuid
+  companyId   String?      @db.Uuid
+  dealId      String?      @db.Uuid
+  createdAt   DateTime     @default(now()) @db.Timestamptz(3)
+
+  account   Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  workspace SalesWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  actor     User?          @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  lead      Lead?          @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  contact   Contact?       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  company   Company?       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  deal      Deal?          @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, workspaceId, occurredAt])
+  @@index([leadId, occurredAt])
+  @@index([contactId, occurredAt])
+  @@index([companyId, occurredAt])
+  @@index([dealId, occurredAt])
+  @@map("activities")
+}
+
+model Tag {
+  id        String   @id @default(uuid()) @db.Uuid
+  accountId String   @db.Uuid
+  name      String
+  color     String?
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  account  Account     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  entities EntityTag[]
+
+  @@unique([accountId, name])
+  @@map("tags")
+}
+
+model EntityTag {
+  tagId      String          @db.Uuid
+  entityType ShareableEntity
+  entityId   String          @db.Uuid
+  createdAt  DateTime        @default(now()) @db.Timestamptz(3)
+
+  tag Tag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([tagId, entityType, entityId])
+  @@index([entityType, entityId])
+  @@map("entity_tags")
+}
+
+model CustomFieldDefinition {
+  id          String          @id @default(uuid()) @db.Uuid
+  accountId   String          @db.Uuid
+  entityType  ShareableEntity
+  key         String
+  label       String
+  fieldType   CustomFieldType @default(TEXT)
+  options     Json?
+  isRequired  Boolean         @default(false)
+  position    Int             @default(0)
+  createdAt   DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime        @updatedAt @db.Timestamptz(3)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, entityType, key])
+  @@map("custom_field_definitions")
+}
+
+// ----------------------------------------------------------------------------- sharing, transfer, audit
+
+model RecordShare {
+  id                String          @id @default(uuid()) @db.Uuid
+  accountId         String          @db.Uuid
+  entityType        ShareableEntity
+  entityId          String          @db.Uuid
+  ownerWorkspaceId  String          @db.Uuid
+  targetWorkspaceId String          @db.Uuid
+  permission        SharePermission @default(READ)
+  createdById       String?         @db.Uuid
+  revokedAt         DateTime?       @db.Timestamptz(3)
+  revokedById       String?         @db.Uuid
+  createdAt         DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime        @updatedAt @db.Timestamptz(3)
+
+  account         Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  ownerWorkspace  SalesWorkspace @relation("ShareOwner", fields: [ownerWorkspaceId], references: [id], onDelete: Cascade)
+  targetWorkspace SalesWorkspace @relation("ShareTarget", fields: [targetWorkspaceId], references: [id], onDelete: Cascade)
+  createdBy       User?          @relation("ShareCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([entityType, entityId, targetWorkspaceId])
+  @@index([targetWorkspaceId, entityType, revokedAt])
+  @@index([accountId, entityType, entityId])
+  @@map("record_shares")
+}
+
+model RecordTransferHistory {
+  id              String          @id @default(uuid()) @db.Uuid
+  accountId       String          @db.Uuid
+  entityType      ShareableEntity
+  entityId        String          @db.Uuid
+  fromWorkspaceId String          @db.Uuid
+  toWorkspaceId   String          @db.Uuid
+  cascaded        Json? // { tasks: n, deals: n, ... }
+  reason          String?
+  performedById   String?         @db.Uuid
+  createdAt       DateTime        @default(now()) @db.Timestamptz(3)
+
+  account       Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  fromWorkspace SalesWorkspace @relation("TransferFrom", fields: [fromWorkspaceId], references: [id], onDelete: Restrict)
+  toWorkspace   SalesWorkspace @relation("TransferTo", fields: [toWorkspaceId], references: [id], onDelete: Restrict)
+  performedBy   User?          @relation(fields: [performedById], references: [id], onDelete: SetNull)
+
+  @@index([accountId, entityType, entityId, createdAt])
+  @@map("record_transfer_history")
+}
+
+model AuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  accountId   String   @db.Uuid
+  userId      String?  @db.Uuid
+  workspaceId String?  @db.Uuid
+  action      String // e.g. lead.create, record.share, record.transfer, smtp.test
+  entityType  String
+  entityId    String?
+  before      Json?
+  after       Json?
+  metadata    Json?
+  ip          String?
+  userAgent   String?
+  requestId   String?
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  account   Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  user      User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  workspace SalesWorkspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+
+  @@index([accountId, createdAt])
+  @@index([accountId, entityType, entityId])
+  @@index([workspaceId, createdAt])
+  @@map("audit_logs")
+}
+
+// ----------------------------------------------------------------------------- email infrastructure
+
+model SmtpAccount {
+  id                   String       @id @default(uuid()) @db.Uuid
+  accountId            String       @db.Uuid
+  name                 String
+  fromEmail            String
+  fromName             String?
+  provider             SmtpProvider
+  host                 String
+  port                 Int
+  security             SmtpSecurity
+  authType             SmtpAuthType @default(PASSWORD)
+  username             String
+  // AES-256-GCM encrypted JSON ({ password } or { clientId, clientSecret, refreshToken }).
+  credentialCiphertext String
+  credentialIv         String
+  credentialTag        String
+  credentialKeyVersion Int          @default(1)
+  sesRegion            String?
+  hourlyLimit          Int
+  dailyLimit           Int
+  isEnabled            Boolean      @default(true)
+  health               SmtpHealth   @default(UNTESTED)
+  unhealthyUntil       DateTime?    @db.Timestamptz(3)
+  consecutiveFailures  Int          @default(0)
+  lastTestedAt         DateTime?    @db.Timestamptz(3)
+  lastError            String?
+  lastUsedAt           DateTime?    @db.Timestamptz(3)
+  createdAt            DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime     @updatedAt @db.Timestamptz(3)
+  deletedAt            DateTime?    @db.Timestamptz(3)
+
+  account     Account                @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  workspaces  SmtpAccountWorkspace[]
+  usage       SmtpUsageWindow[]
+  campaigns   CampaignSmtpAccount[]
+  recipients  CampaignRecipient[]
+  events      EmailEvent[]
+  automations Automation[]
+
+  @@unique([accountId, fromEmail], map: "smtp_accounts_account_from_live_key", where: raw("\"deletedAt\" IS NULL"))
+  @@index([accountId, isEnabled, health])
+  @@map("smtp_accounts")
+}
+
+model SmtpAccountWorkspace {
+  smtpAccountId String   @db.Uuid
+  workspaceId   String   @db.Uuid
+  assignedAt    DateTime @default(now()) @db.Timestamptz(3)
+
+  smtpAccount SmtpAccount    @relation(fields: [smtpAccountId], references: [id], onDelete: Cascade)
+  workspace   SalesWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@id([smtpAccountId, workspaceId])
+  @@index([workspaceId])
+  @@map("smtp_account_workspaces")
+}
+
+// Durable mirror of the Redis rate counters (Redis is the fast path).
+model SmtpUsageWindow {
+  smtpAccountId String      @db.Uuid
+  window        UsageWindow
+  windowStart   DateTime    @db.Timestamptz(3)
+  sentCount     Int         @default(0)
+  failedCount   Int         @default(0)
+  updatedAt     DateTime    @updatedAt @db.Timestamptz(3)
+
+  smtpAccount SmtpAccount @relation(fields: [smtpAccountId], references: [id], onDelete: Cascade)
+
+  @@id([smtpAccountId, window, windowStart])
+  @@map("smtp_usage_windows")
+}
+
+model EmailList {
+  id               String    @id @default(uuid()) @db.Uuid
+  accountId        String    @db.Uuid
+  ownerWorkspaceId String    @db.Uuid
+  name             String
+  description      String?
+  createdAt        DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt        DateTime? @db.Timestamptz(3)
+
+  account        Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  ownerWorkspace SalesWorkspace     @relation(fields: [ownerWorkspaceId], references: [id], onDelete: Restrict)
+  members        EmailListContact[]
+  campaigns      CampaignList[]
+
+  @@unique([ownerWorkspaceId, name], map: "email_lists_workspace_name_live_key", where: raw("\"deletedAt\" IS NULL"))
+  @@index([accountId, ownerWorkspaceId])
+  @@map("email_lists")
+}
+
+model EmailListContact {
+  listId         String           @db.Uuid
+  contactId      String           @db.Uuid
+  status         ListMemberStatus @default(SUBSCRIBED)
+  source         String?
+  addedAt        DateTime         @default(now()) @db.Timestamptz(3)
+  unsubscribedAt DateTime?        @db.Timestamptz(3)
+
+  list    EmailList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  contact Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@id([listId, contactId])
+  @@index([contactId])
+  @@index([listId, status])
+  @@map("email_list_contacts")
+}
+
+model EmailTemplate {
+  id               String    @id @default(uuid()) @db.Uuid
+  accountId        String    @db.Uuid
+  ownerWorkspaceId String?   @db.Uuid // null = available to every Sales ID
+  name             String
+  subject          String?
+  preheader        String?
+  html             String
+  text             String?
+  design           Json?
+  createdAt        DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt        DateTime? @db.Timestamptz(3)
+
+  account        Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  ownerWorkspace SalesWorkspace? @relation(fields: [ownerWorkspaceId], references: [id], onDelete: Restrict)
+  campaigns      Campaign[]
+
+  @@index([accountId, ownerWorkspaceId])
+  @@map("email_templates")
+}
+
+// Account-wide: a suppressed address is never mailed from any Sales ID.
+model Suppression {
+  id              String            @id @default(uuid()) @db.Uuid
+  accountId       String            @db.Uuid
+  emailNormalized String? // nulled on erasure; emailHash keeps the block
+  emailHash       String // sha256(emailNormalized)
+  reason          SuppressionReason
+  source          EventSource       @default(MANUAL)
+  countryCode     String?           @db.Char(2)
+  note            String?
+  campaignId      String?           @db.Uuid
+  createdAt       DateTime          @default(now()) @db.Timestamptz(3)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, emailHash])
+  @@index([accountId, reason])
+  @@map("suppressions")
+}
+
+model Unsubscribe {
+  id              String      @id @default(uuid()) @db.Uuid
+  accountId       String      @db.Uuid
+  emailNormalized String?
+  emailHash       String
+  workspaceId     String?     @db.Uuid
+  campaignId      String?     @db.Uuid
+  recipientId     String?     @db.Uuid
+  source          EventSource
+  countryCode     String?     @db.Char(2)
+  ip              String?
+  userAgent       String?
+  createdAt       DateTime    @default(now()) @db.Timestamptz(3)
+
+  account   Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  workspace SalesWorkspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+
+  @@index([accountId, emailHash])
+  @@index([campaignId])
+  @@map("unsubscribes")
+}
+
+model ConsentRecord {
+  id              String        @id @default(uuid()) @db.Uuid
+  accountId       String        @db.Uuid
+  contactId       String?       @db.Uuid
+  emailNormalized String?
+  emailHash       String
+  status          ConsentStatus
+  legalBasis      String? // consent, legitimate_interest, existing_customer …
+  source          String? // web_form, import, manual, event …
+  countryCode     String?       @db.Char(2)
+  evidence        Json?
+  capturedAt      DateTime      @default(now()) @db.Timestamptz(3)
+  withdrawnAt     DateTime?     @db.Timestamptz(3)
+  createdAt       DateTime      @default(now()) @db.Timestamptz(3)
+
+  account Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  contact Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@index([accountId, emailHash, capturedAt])
+  @@index([contactId])
+  @@map("consent_records")
+}
+
+model CountryProfile {
+  id                   String      @id @default(uuid()) @db.Uuid
+  accountId            String      @db.Uuid
+  code                 String      @db.Char(2) // ISO 3166-1 alpha-2
+  name                 String
+  defaultTimezone      String
+  legalRegime          LegalRegime @default(OTHER)
+  requiresPriorConsent Boolean     @default(false)
+  businessHoursStart   String      @default("09:00")
+  businessHoursEnd     String      @default("18:00")
+  businessDays         Int[]       @default([1, 2, 3, 4, 5])
+  currency             String?     @db.Char(3)
+  notes                String?
+  createdAt            DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime    @updatedAt @db.Timestamptz(3)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, code])
+  @@map("country_profiles")
+}
+
+model Holiday {
+  id          String   @id @default(uuid()) @db.Uuid
+  accountId   String   @db.Uuid
+  countryCode String   @db.Char(2)
+  date        DateTime @db.Date
+  name        String
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, countryCode, date])
+  @@map("holidays")
+}
+
+// ----------------------------------------------------------------------------- campaigns
+
+model Campaign {
+  id                   String            @id @default(uuid()) @db.Uuid
+  accountId            String            @db.Uuid
+  ownerWorkspaceId     String            @db.Uuid
+  templateId           String?           @db.Uuid
+  createdById          String?           @db.Uuid
+  name                 String
+  description          String?
+  status               CampaignStatus    @default(DRAFT)
+  statusReason         String?
+  subject              String?
+  preheader            String?
+  fromName             String?
+  fromEmail            String?
+  replyTo              String?
+  html                 String?
+  text                 String?
+  segmentFilter        Json?
+  trackOpens           Boolean           @default(true)
+  trackClicks          Boolean           @default(true)
+  scheduleMode         ScheduleMode      @default(IMMEDIATE)
+  scheduledAtUtc       DateTime?         @db.Timestamptz(3)
+  localSendDate        DateTime?         @db.Date
+  localSendTime        String? // HH:mm in the recipient's zone
+  fallbackTimezone     String?
+  pastTimeBehaviour    PastTimeBehaviour @default(NEXT_DAY)
+  respectBusinessHours Boolean           @default(false)
+  // Pitch price is typed by the user; the app never calculates or converts it.
+  pitchAmountMinor     BigInt?
+  pitchCurrency        String?           @db.Char(3)
+  pitchPriceNote       String?
+  startedAt            DateTime?         @db.Timestamptz(3)
+  completedAt          DateTime?         @db.Timestamptz(3)
+  cancelledAt          DateTime?         @db.Timestamptz(3)
+  createdAt            DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime          @updatedAt @db.Timestamptz(3)
+  deletedAt            DateTime?         @db.Timestamptz(3)
+
+  account        Account               @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  ownerWorkspace SalesWorkspace        @relation(fields: [ownerWorkspaceId], references: [id], onDelete: Restrict)
+  template       EmailTemplate?        @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  createdBy      User?                 @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  lists          CampaignList[]
+  smtpAccounts   CampaignSmtpAccount[]
+  recipients     CampaignRecipient[]
+  events         EmailEvent[]
+  links          TrackedLink[]
+
+  @@index([accountId, ownerWorkspaceId, status])
+  @@index([status, scheduledAtUtc])
+  @@map("campaigns")
+}
+
+model CampaignList {
+  campaignId String @db.Uuid
+  listId     String @db.Uuid
+
+  campaign Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  list     EmailList @relation(fields: [listId], references: [id], onDelete: Restrict)
+
+  @@id([campaignId, listId])
+  @@map("campaign_lists")
+}
+
+model CampaignSmtpAccount {
+  campaignId    String @db.Uuid
+  smtpAccountId String @db.Uuid
+  weight        Int    @default(1)
+
+  campaign    Campaign    @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  smtpAccount SmtpAccount @relation(fields: [smtpAccountId], references: [id], onDelete: Restrict)
+
+  @@id([campaignId, smtpAccountId])
+  @@map("campaign_smtp_accounts")
+}
+
+// Source of truth for sending. A row moves PENDING → QUEUED → SENDING → SENT
+// (or FAILED / SKIPPED / SUPPRESSED / CANCELLED); BOUNCED and UNSUBSCRIBED are
+// applied later from events. The unique key makes double-sending impossible.
+model CampaignRecipient {
+  id                String          @id @default(uuid()) @db.Uuid
+  campaignId        String          @db.Uuid
+  contactId         String?         @db.Uuid
+  email             String
+  emailNormalized   String
+  mergeData         Json? // snapshot of firstName, lastName, company … at enqueue time
+  countryCode       String?         @db.Char(2)
+  recipientTimezone String?
+  scheduledAtUtc    DateTime?       @db.Timestamptz(3)
+  status            RecipientStatus @default(PENDING)
+  skipReason        String?
+  smtpAccountId     String?         @db.Uuid
+  attempts          Int             @default(0)
+  nextAttemptAt     DateTime?       @db.Timestamptz(3)
+  lockedAt          DateTime?       @db.Timestamptz(3)
+  lockedBy          String?
+  messageId         String?
+  trackingToken     String          @unique
+  lastError         String?
+  queuedAt          DateTime?       @db.Timestamptz(3)
+  sentAt            DateTime?       @db.Timestamptz(3)
+  firstOpenedAt     DateTime?       @db.Timestamptz(3)
+  firstClickedAt    DateTime?       @db.Timestamptz(3)
+  bouncedAt         DateTime?       @db.Timestamptz(3)
+  unsubscribedAt    DateTime?       @db.Timestamptz(3)
+  createdAt         DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime        @updatedAt @db.Timestamptz(3)
+
+  campaign    Campaign     @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact     Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  smtpAccount SmtpAccount? @relation(fields: [smtpAccountId], references: [id], onDelete: SetNull)
+  events      EmailEvent[]
+
+  @@unique([campaignId, emailNormalized])
+  @@index([campaignId, status, scheduledAtUtc])
+  @@index([status, scheduledAtUtc])
+  @@index([status, lockedAt])
+  @@index([messageId])
+  @@map("campaign_recipients")
+}
+
+model EmailEvent {
+  id               String         @id @default(uuid()) @db.Uuid
+  accountId        String         @db.Uuid
+  workspaceId      String?        @db.Uuid
+  campaignId       String?        @db.Uuid
+  recipientId      String?        @db.Uuid
+  smtpAccountId    String?        @db.Uuid
+  automationExecId String?        @db.Uuid
+  type             EmailEventType
+  source           EventSource
+  dedupeKey        String         @unique
+  providerEventId  String?
+  url              String?
+  isMachine        Boolean        @default(false) // e.g. Apple MPP / scanner prefetch
+  ip               String?
+  userAgent        String?
+  metadata         Json?
+  occurredAt       DateTime       @db.Timestamptz(3)
+  createdAt        DateTime       @default(now()) @db.Timestamptz(3)
+
+  account     Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  workspace   SalesWorkspace?    @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  campaign    Campaign?          @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  recipient   CampaignRecipient? @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  smtpAccount SmtpAccount?       @relation(fields: [smtpAccountId], references: [id], onDelete: SetNull)
+
+  @@index([campaignId, type, occurredAt])
+  @@index([accountId, type, occurredAt])
+  @@index([workspaceId, type, occurredAt])
+  @@index([smtpAccountId, type, occurredAt])
+  @@index([recipientId])
+  @@map("email_events")
+}
+
+model TrackedLink {
+  id         String   @id @default(uuid()) @db.Uuid
+  campaignId String   @db.Uuid
+  url        String
+  urlHash    String
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, urlHash])
+  @@map("tracked_links")
+}
+
+// ----------------------------------------------------------------------------- automation
+
+model Automation {
+  id               String            @id @default(uuid()) @db.Uuid
+  accountId        String            @db.Uuid
+  ownerWorkspaceId String            @db.Uuid
+  smtpAccountId    String?           @db.Uuid
+  name             String
+  description      String?
+  status           AutomationStatus  @default(DRAFT)
+  triggerType      AutomationTrigger
+  triggerConfig    Json?
+  allowReentry     Boolean           @default(false)
+  createdAt        DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime          @updatedAt @db.Timestamptz(3)
+  deletedAt        DateTime?         @db.Timestamptz(3)
+
+  account        Account                @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  ownerWorkspace SalesWorkspace         @relation(fields: [ownerWorkspaceId], references: [id], onDelete: Restrict)
+  smtpAccount    SmtpAccount?           @relation(fields: [smtpAccountId], references: [id], onDelete: SetNull)
+  steps          AutomationStep[]
+  enrollments    AutomationEnrollment[]
+
+  @@index([accountId, ownerWorkspaceId, status])
+  @@index([triggerType, status])
+  @@map("automations")
+}
+
+model AutomationStep {
+  id           String             @id @default(uuid()) @db.Uuid
+  automationId String             @db.Uuid
+  position     Int
+  type         AutomationStepType
+  config       Json
+  createdAt    DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime           @updatedAt @db.Timestamptz(3)
+
+  automation Automation            @relation(fields: [automationId], references: [id], onDelete: Cascade)
+  executions AutomationExecution[]
+
+  @@unique([automationId, position])
+  @@map("automation_steps")
+}
+
+model AutomationEnrollment {
+  id              String           @id @default(uuid()) @db.Uuid
+  automationId    String           @db.Uuid
+  contactId       String?          @db.Uuid
+  leadId          String?          @db.Uuid
+  emailNormalized String
+  dedupeKey       String           @unique // automationId:email[:cycle]
+  status          EnrollmentStatus @default(ACTIVE)
+  currentPosition Int              @default(0)
+  nextRunAt       DateTime?        @db.Timestamptz(3)
+  exitReason      String?
+  enrolledAt      DateTime         @default(now()) @db.Timestamptz(3)
+  completedAt     DateTime?        @db.Timestamptz(3)
+
+  automation Automation            @relation(fields: [automationId], references: [id], onDelete: Cascade)
+  contact    Contact?              @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  lead       Lead?                 @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  executions AutomationExecution[]
+
+  @@index([status, nextRunAt])
+  @@index([automationId, status])
+  @@map("automation_enrollments")
+}
+
+model AutomationExecution {
+  id             String          @id @default(uuid()) @db.Uuid
+  enrollmentId   String          @db.Uuid
+  stepId         String          @db.Uuid
+  idempotencyKey String          @unique // enrollmentId:stepId
+  status         ExecutionStatus @default(PENDING)
+  attempts       Int             @default(0)
+  messageId      String?
+  error          String?
+  startedAt      DateTime?       @db.Timestamptz(3)
+  finishedAt     DateTime?       @db.Timestamptz(3)
+  createdAt      DateTime        @default(now()) @db.Timestamptz(3)
+
+  enrollment AutomationEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  step       AutomationStep       @relation(fields: [stepId], references: [id], onDelete: Cascade)
+
+  @@index([enrollmentId])
+  @@index([status, createdAt])
+  @@map("automation_executions")
+}
+
+// ----------------------------------------------------------------------------- misc
+
+model Notification {
+  id        String    @id @default(uuid()) @db.Uuid
+  accountId String    @db.Uuid
+  userId    String    @db.Uuid
+  type      String
+  title     String
+  body      String?
+  link      String?
+  readAt    DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+  @@map("notifications")
+}
+
+model SystemSetting {
+  accountId String   @db.Uuid
+  key       String
+  value     Json
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@id([accountId, key])
+  @@map("system_settings")
+}
+
+model ImportJob {
+  id            String       @id @default(uuid()) @db.Uuid
+  accountId     String       @db.Uuid
+  workspaceId   String       @db.Uuid
+  createdById   String?      @db.Uuid
+  entityType    ImportEntity
+  targetListId  String?      @db.Uuid
+  fileName      String
+  status        ImportStatus @default(PENDING)
+  mapping       Json?
+  options       Json?
+  totalRows     Int          @default(0)
+  processedRows Int          @default(0)
+  createdCount  Int          @default(0)
+  updatedCount  Int          @default(0)
+  skippedCount  Int          @default(0)
+  errorCount    Int          @default(0)
+  errors        Json?
+  createdAt     DateTime     @default(now()) @db.Timestamptz(3)
+  completedAt   DateTime?    @db.Timestamptz(3)
+
+  account   Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  workspace SalesWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy User?          @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([accountId, workspaceId, createdAt])
+  @@map("import_jobs")
+}

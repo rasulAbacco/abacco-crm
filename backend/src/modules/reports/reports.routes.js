@@ -1,0 +1,14 @@
+import { Router } from 'express';
+import * as c from './reports.controller.js';
+import * as v from './reports.validator.js';
+import { validate } from '../../middleware/validationMiddleware.js';
+import { requireAuth } from '../../middleware/authMiddleware.js';
+import { salesScope } from '../../middleware/salesIdMiddleware.js';
+const router = Router();
+router.use(requireAuth, salesScope);
+router.get('/sales', validate({ query: v.rangeQuery }), c.sales);
+router.get('/email', validate({ query: v.rangeQuery }), c.email);
+router.get('/sales-ids', validate({ query: v.rangeQuery }), c.comparison);
+router.get('/trends', validate({ query: v.rangeQuery }), c.trends);
+router.get('/export', validate({ query: v.exportQuery }), c.exportFile);
+export default router;

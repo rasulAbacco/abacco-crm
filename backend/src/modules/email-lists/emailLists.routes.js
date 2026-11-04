@@ -1,0 +1,22 @@
+import { Router } from 'express';
+import * as c from './emailLists.controller.js';
+import * as v from './emailLists.validator.js';
+import { validate } from '../../middleware/validationMiddleware.js';
+import { requireAuth } from '../../middleware/authMiddleware.js';
+import { salesScope } from '../../middleware/salesIdMiddleware.js';
+import { singleFile } from '../../middleware/uploadMiddleware.js';
+
+const router = Router();
+router.use(requireAuth, salesScope);
+router.get('/', validate({ query: v.listQuery }), c.list);
+router.post('/', validate({ body: v.createSchema }), c.create);
+router.get('/:id', validate({ params: v.idParams }), c.get);
+router.put('/:id', validate({ params: v.idParams, body: v.updateSchema }), c.update);
+router.delete('/:id', validate({ params: v.idParams }), c.remove);
+router.get('/:id/members', validate({ params: v.idParams, query: v.membersQuery }), c.members);
+router.post('/:id/members', validate({ params: v.idParams, body: v.addMembersSchema }), c.addMembers);
+router.post('/:id/members/segment', validate({ params: v.idParams, body: v.segmentSchema }), c.addSegment);
+router.post('/:id/members/remove', validate({ params: v.idParams, body: v.removeMembersSchema }), c.removeMembers);
+router.post('/:id/import', singleFile, validate({ params: v.idParams }), c.importFile);
+router.get('/:id/export', validate({ params: v.idParams, query: v.exportQuery }), c.exportFile);
+export default router;

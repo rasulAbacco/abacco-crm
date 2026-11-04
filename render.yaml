@@ -1,0 +1,110 @@
+# Render Blueprint — Abacco CRM (API + background worker + web app + Postgres + Key Value).
+# Region: Singapore (closest Render region to India). It cannot be changed later and
+# every service must share it for private networking.
+envVarGroups:
+  - name: abacco-shared
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TZ
+        value: UTC
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: ENCRYPTION_KEYS            # "1:<base64 of 32 random bytes>" — back it up; never change it casually
+        sync: false
+      - key: APP_URL                    # e.g. https://abacco-web.onrender.com or https://crm.yourdomain.com
+        sync: false
+      - key: API_PUBLIC_URL             # e.g. https://abacco-api.onrender.com — used in tracking & unsubscribe links
+        sync: false
+      - key: SES_SNS_TOPIC_ARNS         # optional: comma-separated SNS topic ARNs allowed to post SES events
+        sync: false
+
+services:
+  - type: web
+    name: abacco-api
+    runtime: node
+    region: singapore
+    plan: starter
+    rootDir: backend
+    buildCommand: npm ci && npx prisma generate
+    preDeployCommand: npx prisma migrate deploy && node prisma/seed.js
+    startCommand: node src/server.js
+    healthCheckPath: /ready
+    envVars:
+      - fromGroup: abacco-shared
+      - key: SERVICE_NAME
+        value: abacco-api
+      - key: TRUST_PROXY
+        value: "1"
+      - key: DATABASE_URL
+        fromDatabase: { name: abacco-db, property: connectionString }
+      - key: REDIS_URL
+        fromService: { type: keyvalue, name: abacco-redis, property: connectionString }
+      - key: CORS_ORIGINS               # the web app URL(s), comma separated
+        sync: false
+      - key: SETUP_TOKEN                # remove after creating the primary account
+        sync: false
+      - key: SYSTEM_SMTP_HOST           # mailbox for password-reset emails
+        sync: false
+      - key: SYSTEM_SMTP_PORT
+        sync: false
+      - key: SYSTEM_SMTP_USER
+        sync: false
+      - key: SYSTEM_SMTP_PASS
+        sync: false
+      - key: SYSTEM_MAIL_FROM
+        sync: false
+
+  - type: worker
+    name: abacco-worker
+    runtime: node
+    region: singapore
+    plan: starter
+    rootDir: backend
+    buildCommand: npm ci && npx prisma generate
+    startCommand: node src/workers/workerBootstrap.js
+    envVars:
+      - fromGroup: abacco-shared
+      - key: SERVICE_NAME
+        value: abacco-worker
+      - key: WORKER_SEND_CONCURRENCY
+        value: "4"
+      - key: DATABASE_URL
+        fromDatabase: { name: abacco-db, property: connectionString }
+      - key: REDIS_URL
+        fromService: { type: keyvalue, name: abacco-redis, property: connectionString }
+
+  - type: web
+    name: abacco-web
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    headers:
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+    routes:
+      # Same-origin API calls keep the refresh cookie SameSite=Strict.
+      # Replace the host if your API service has a different URL or a custom domain.
+      - type: rewrite
+        source: /api/*
+        destination: https://abacco-api.onrender.com/api/*
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+  - type: keyvalue
+    name: abacco-redis
+    region: singapore
+    plan: starter                       # persistent; the free plan loses data on restart
+    maxmemoryPolicy: noeviction         # required by BullMQ — evicting keys would drop jobs
+    ipAllowList: []                     # private network only
+
+databases:
+  - name: abacco-db
+    region: singapore
+    plan: basic-256mb
+    postgresMajorVersion: "16"
+    databaseName: abacco_crm
+    user: abacco

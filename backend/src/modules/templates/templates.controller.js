@@ -1,0 +1,10 @@
+import * as s from './templates.service.js';
+import { ok, created, paginated } from '../../utils/apiResponse.js';
+import { requestContext } from '../../services/audit/auditService.js';
+export const list = async (req, res) => { const q = req.valid.query; const r = await s.list(req.scope, q); return paginated(res, r.items, { ...q, total: r.total }); };
+export const get = async (req, res) => ok(res, await s.get(req.scope, req.valid.params.id));
+export const create = async (req, res) => created(res, await s.create(req.scope, req.valid.body, requestContext(req)));
+export const update = async (req, res) => ok(res, await s.update(req.scope, req.valid.params.id, req.valid.body, requestContext(req)));
+export const remove = async (req, res) => ok(res, await s.remove(req.scope, req.valid.params.id, requestContext(req)));
+export const duplicate = async (req, res) => created(res, await s.duplicate(req.scope, req.valid.params.id, requestContext(req)));
+export const preview = async (req, res) => ok(res, await s.preview(req.scope, req.valid.body));

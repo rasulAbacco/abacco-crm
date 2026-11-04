@@ -1,0 +1,14 @@
+import { Router } from 'express';
+import * as c from './suppressions.controller.js';
+import * as v from './suppressions.validator.js';
+import { validate } from '../../middleware/validationMiddleware.js';
+import { requireAuth } from '../../middleware/authMiddleware.js';
+import { listQuerySchema } from '../../utils/pagination.js';
+const router = Router();
+router.use(requireAuth);
+router.get('/', validate({ query: v.listQuery }), c.list);
+router.get('/summary', c.summary);
+router.get('/unsubscribes', validate({ query: listQuerySchema }), c.unsubscribes);
+router.post('/', validate({ body: v.addSchema }), c.add);
+router.delete('/:id', validate({ params: v.idParams }), c.remove);
+export default router;

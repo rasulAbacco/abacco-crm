@@ -1,0 +1,23 @@
+import * as s from './campaign.service.js';
+import { ok, created, paginated } from '../../utils/apiResponse.js';
+import { requestContext } from '../../services/audit/auditService.js';
+
+const ctx = requestContext;
+const id = (req) => req.valid.params.id;
+export const list = async (req, res) => { const q = req.valid.query; const r = await s.list(req.scope, q); return paginated(res, r.items, { ...q, total: r.total }); };
+export const get = async (req, res) => ok(res, await s.get(req.scope, id(req)));
+export const create = async (req, res) => created(res, await s.create(req.scope, req.valid.body, ctx(req)));
+export const update = async (req, res) => ok(res, await s.update(req.scope, id(req), req.valid.body, ctx(req)));
+export const remove = async (req, res) => ok(res, await s.remove(req.scope, id(req), ctx(req)));
+export const duplicate = async (req, res) => created(res, await s.duplicate(req.scope, id(req), ctx(req)));
+export const preview = async (req, res) => ok(res, await s.preview(req.scope, id(req)));
+export const send = async (req, res) => ok(res, await s.launch(req.scope, id(req), ctx(req)));
+export const pause = async (req, res) => ok(res, await s.pause(req.scope, id(req), ctx(req)));
+export const resume = async (req, res) => ok(res, await s.resume(req.scope, id(req), ctx(req)));
+export const cancel = async (req, res) => ok(res, await s.cancel(req.scope, id(req), ctx(req)));
+export const unschedule = async (req, res) => ok(res, await s.unschedule(req.scope, id(req), ctx(req)));
+export const retryFailed = async (req, res) => ok(res, await s.retryFailed(req.scope, id(req), ctx(req)));
+export const statistics = async (req, res) => ok(res, await s.stats(req.scope, id(req)));
+export const recipients = async (req, res) => { const q = req.valid.query; const r = await s.recipients(req.scope, id(req), q); return paginated(res, r.items, { ...q, total: r.total }); };
+export const test = async (req, res) => ok(res, await s.sendTest(req.scope, id(req), req.valid.body, ctx(req)));
+export const eligibleSmtp = async (req, res) => ok(res, await s.eligibleSmtp(req.scope, req.query.workspaceId));
