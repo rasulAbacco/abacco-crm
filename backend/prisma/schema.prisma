@@ -351,17 +351,17 @@ model User {
   createdAt         DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt         DateTime  @updatedAt @db.Timestamptz(3)
 
-  account        Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  refreshTokens  RefreshToken[]
-  resetTokens    PasswordResetToken[]
-  auditLogs      AuditLog[]
-  notifications  Notification[]
-  createdShares  RecordShare[]        @relation("ShareCreatedBy")
-  transfers      RecordTransferHistory[]
-  notes          Note[]
-  activities     Activity[]
-  campaigns      Campaign[]
-  importJobs     ImportJob[]
+  account       Account                 @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  refreshTokens RefreshToken[]
+  resetTokens   PasswordResetToken[]
+  auditLogs     AuditLog[]
+  notifications Notification[]
+  createdShares RecordShare[]           @relation("ShareCreatedBy")
+  transfers     RecordTransferHistory[]
+  notes         Note[]
+  activities    Activity[]
+  campaigns     Campaign[]
+  importJobs    ImportJob[]
 
   @@index([accountId])
   @@map("users")
@@ -420,7 +420,7 @@ model SalesWorkspace {
   updatedAt           DateTime        @updatedAt @db.Timestamptz(3)
   deletedAt           DateTime?       @db.Timestamptz(3)
 
-  account         Account                  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account         Account                 @relation(fields: [accountId], references: [id], onDelete: Cascade)
   settings        SalesWorkspaceSettings?
   leads           Lead[]
   contacts        Contact[]
@@ -430,10 +430,10 @@ model SalesWorkspace {
   tasks           Task[]
   notes           Note[]
   activities      Activity[]
-  sharesOut       RecordShare[]            @relation("ShareOwner")
-  sharesIn        RecordShare[]            @relation("ShareTarget")
-  transfersOut    RecordTransferHistory[]  @relation("TransferFrom")
-  transfersIn     RecordTransferHistory[]  @relation("TransferTo")
+  sharesOut       RecordShare[]           @relation("ShareOwner")
+  sharesIn        RecordShare[]           @relation("ShareTarget")
+  transfersOut    RecordTransferHistory[] @relation("TransferFrom")
+  transfersIn     RecordTransferHistory[] @relation("TransferTo")
   smtpAssignments SmtpAccountWorkspace[]
   emailLists      EmailList[]
   templates       EmailTemplate[]
@@ -538,18 +538,18 @@ model Contact {
   updatedAt        DateTime       @updatedAt @db.Timestamptz(3)
   deletedAt        DateTime?      @db.Timestamptz(3)
 
-  account          Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  ownerWorkspace   SalesWorkspace      @relation(fields: [ownerWorkspaceId], references: [id], onDelete: Restrict)
-  company          Company?            @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  convertedLeads   Lead[]
-  deals            Deal[]
-  tasks            Task[]
-  notes            Note[]
-  activities       Activity[]
-  listMemberships  EmailListContact[]
-  consents         ConsentRecord[]
-  campaignRecips   CampaignRecipient[]
-  enrollments      AutomationEnrollment[]
+  account         Account                @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  ownerWorkspace  SalesWorkspace         @relation(fields: [ownerWorkspaceId], references: [id], onDelete: Restrict)
+  company         Company?               @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  convertedLeads  Lead[]
+  deals           Deal[]
+  tasks           Task[]
+  notes           Note[]
+  activities      Activity[]
+  listMemberships EmailListContact[]
+  consents        ConsentRecord[]
+  campaignRecips  CampaignRecipient[]
+  enrollments     AutomationEnrollment[]
 
   @@unique([ownerWorkspaceId, emailNormalized], map: "contacts_workspace_email_live_key", where: raw("\"deletedAt\" IS NULL AND \"emailNormalized\" IS NOT NULL"))
   @@index([accountId, ownerWorkspaceId, deletedAt])
@@ -560,43 +560,53 @@ model Contact {
 }
 
 model Lead {
-  id               String         @id @default(uuid()) @db.Uuid
-  accountId        String         @db.Uuid
-  ownerWorkspaceId String         @db.Uuid
-  companyId        String?        @db.Uuid
-  contactId        String?        @db.Uuid // set when converted
-  firstName        String?
-  lastName         String?
-  fullName         String
-  email            String?
-  emailNormalized  String?
-  phoneE164        String?
-  phoneRaw         String?
-  companyName      String?
-  designation      String?
-  website          String?
-  countryCode      String?        @db.Char(2)
-  region           String?
-  city             String?
-  timezone         String?
-  timezoneSource   TimezoneSource @default(DEFAULT)
-  locale           String?
-  source           String?
-  status           LeadStatus     @default(NEW)
-  priority         Priority       @default(MEDIUM)
-  score            Int            @default(0)
-  description      String?
-  customFields     Json?
-  convertedAt      DateTime?      @db.Timestamptz(3)
-  lastActivityAt   DateTime?      @db.Timestamptz(3)
-  createdAt        DateTime       @default(now()) @db.Timestamptz(3)
-  updatedAt        DateTime       @updatedAt @db.Timestamptz(3)
-  deletedAt        DateTime?      @db.Timestamptz(3)
+  id                String         @id @default(uuid()) @db.Uuid
+  accountId         String         @db.Uuid
+  ownerWorkspaceId  String         @db.Uuid
+  companyId         String?        @db.Uuid
+  contactId         String?        @db.Uuid // set when converted
+  firstName         String?
+  lastName          String?
+  fullName          String
+  email             String?
+  emailNormalized   String?
+  phoneE164         String?
+  phoneRaw          String?
+  companyName       String?
+  designation       String?
+  website           String?
+  countryCode       String?        @db.Char(2)
+  region            String?
+  city              String?
+  timezone          String?
+  timezoneSource    TimezoneSource @default(DEFAULT)
+  locale            String?
+  source            String?
+  status            LeadStatus     @default(NEW)
+  priority          Priority       @default(MEDIUM)
+  score             Int            @default(0)
+  description       String?
+  customFields      Json?
+  convertedAt       DateTime?      @db.Timestamptz(3)
+  lastActivityAt    DateTime?      @db.Timestamptz(3)
+  // Sales follow-up (matches the team's Excel tracker). Status lists are editable per account.
+  responseStatus    String? // e.g. Active, Not Responding, Responded, Budget, Leave Out
+  callStatus        String? // e.g. Not Called, Left Voicemail, Call Connected
+  callNotes         String?
+  previousPitch     String?
+  followUpPitch     String?
+  priceCurrency     String?        @db.Char(3)
+  basicPriceMinor   BigInt? // typed by the user; never calculated or converted
+  premiumPriceMinor BigInt?
+  dataCount         Int?
+  createdAt         DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime       @updatedAt @db.Timestamptz(3)
+  deletedAt         DateTime?      @db.Timestamptz(3)
 
-  account        Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  ownerWorkspace SalesWorkspace @relation(fields: [ownerWorkspaceId], references: [id], onDelete: Restrict)
-  company        Company?       @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  contact        Contact?       @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  account        Account                @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  ownerWorkspace SalesWorkspace         @relation(fields: [ownerWorkspaceId], references: [id], onDelete: Restrict)
+  company        Company?               @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  contact        Contact?               @relation(fields: [contactId], references: [id], onDelete: SetNull)
   deals          Deal[]
   tasks          Task[]
   notes          Note[]
@@ -605,6 +615,7 @@ model Lead {
 
   @@index([accountId, ownerWorkspaceId, deletedAt, createdAt])
   @@index([ownerWorkspaceId, status])
+  @@index([ownerWorkspaceId, responseStatus])
   @@index([ownerWorkspaceId, source])
   @@index([ownerWorkspaceId, countryCode])
   @@index([accountId, emailNormalized])
@@ -819,17 +830,17 @@ model EntityTag {
 }
 
 model CustomFieldDefinition {
-  id          String          @id @default(uuid()) @db.Uuid
-  accountId   String          @db.Uuid
-  entityType  ShareableEntity
-  key         String
-  label       String
-  fieldType   CustomFieldType @default(TEXT)
-  options     Json?
-  isRequired  Boolean         @default(false)
-  position    Int             @default(0)
-  createdAt   DateTime        @default(now()) @db.Timestamptz(3)
-  updatedAt   DateTime        @updatedAt @db.Timestamptz(3)
+  id         String          @id @default(uuid()) @db.Uuid
+  accountId  String          @db.Uuid
+  entityType ShareableEntity
+  key        String
+  label      String
+  fieldType  CustomFieldType @default(TEXT)
+  options    Json?
+  isRequired Boolean         @default(false)
+  position   Int             @default(0)
+  createdAt  DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime        @updatedAt @db.Timestamptz(3)
 
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 

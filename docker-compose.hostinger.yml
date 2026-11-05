@@ -10,16 +10,16 @@ name: abacco-crm
 
 x-settings:
   # Your domain (DNS A record → VPS IP), and an email for HTTPS certificate notices
-  domain: &domain CHANGE_ME_crm.yourdomain.com
-  acme-email: &acme_email CHANGE_ME_you@yourdomain.com
+  domain: &domain abaccosales.duckdns.org
+  acme-email: &acme_email xemail.test.2025@gmail.com
   # Random letters+digits only (no symbols), 32+ characters each
-  postgres-password: &pg_password CHANGE_ME_random_letters_and_digits_1
-  redis-password: &redis_password CHANGE_ME_random_letters_and_digits_2
-  jwt-secret: &jwt_secret CHANGE_ME_random_letters_and_digits_64_chars
+  postgres-password: &pg_password AbaccoPostgres202627SecureX9K7M2
+  redis-password: &redis_password AbaccoTechRedis2026SecureP8N4L6
+  jwt-secret: &jwt_secret lh33jL0sdyCfZEx02QveEwjqllnQg3964zakuHGND_SOdsBZ2KUAA3QkfayW1LGU
   # "1:" followed by 32 random bytes in base64. BACK IT UP — needed to read saved SMTP passwords.
-  encryption-keys: &encryption_keys CHANGE_ME_1:base64key=
+  encryption-keys: &encryption_keys 1:siG2qyxKbyVecmiPWDEYWKBceDwMBRBWoUaZQh6uRdg=
   # Any random 24+ characters; type it on https://<domain>/setup to create your login, then set to ""
-  setup-token: &setup_token CHANGE_ME_random_letters_and_digits_3
+  setup-token: &setup_token AbaccoTechSetup2026SecureX7K9M4P2
 
 x-backend: &backend
   # Replace "rasulabacco" if the GitHub account/organisation is different (lowercase).
@@ -27,7 +27,7 @@ x-backend: &backend
   pull_policy: always
   environment: &backend-env
     NODE_ENV: production
-    TZ: UTC
+    TZ: Asia/Kolkata
     DOMAIN: *domain
     POSTGRES_PASSWORD: *pg_password
     REDIS_PASSWORD: *redis_password

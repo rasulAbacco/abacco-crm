@@ -1,6 +1,11 @@
 // Campaign builder: details → audience → SMTP → content → sending options → review.
 import { useEffect, useState } from "react";
-import { useNavigate, useParams, Link } from "react-router-dom";
+import {
+  useNavigate,
+  useParams,
+  Link,
+  useSearchParams,
+} from "react-router-dom";
 import { FiArrowLeft, FiCheck, FiSend, FiSave } from "react-icons/fi";
 import { campaignService } from "./services/campaignService";
 import api, { errorMessage } from "../../services/axiosInstance";
@@ -107,9 +112,21 @@ export default function CreateCampaign() {
       s.user?.timezone ?? s.user?.account?.defaultTimezone ?? "Asia/Kolkata",
   );
   const [step, setStep] = useState(0);
-  const [c, setC] = useState(
-    id ? null : blank(selected !== "all" ? selected : ""),
-  );
+  // Opened from Leads → "Email selected": preselect that Sales ID and list.
+  const [search] = useSearchParams();
+  const [c, setC] = useState(() => {
+    if (id) return null;
+    const presetWs = search.get("salesId");
+    const presetList = search.get("listId");
+    const base = blank(presetWs || (selected !== "all" ? selected : ""));
+    if (presetList) {
+      base.listIds = [presetList];
+      base.name = search.get("name")
+        ? `Pitch – ${search.get("name")}`
+        : base.name;
+    }
+    return base;
+  });
   const [campaignId, setCampaignId] = useState(id ?? null);
   const [lists, setLists] = useState([]);
   const [smtp, setSmtp] = useState([]);
