@@ -35,21 +35,38 @@ abacco-crm/
 │   ├── src/queues/          queueRegistry.js, workerManager.js
 │   ├── src/workers/         workerBootstrap.js  (separate process)
 │   ├── src/services/        audit, cache, email, encryption, events, files, records
-│   └── tests/               integration + unit (50 tests)
+│   ├── tests/               integration + unit (51 tests)
+│   └── Dockerfile           one image for the API, the worker and the migration job
 ├── frontend/                React 18 · Vite · Tailwind · Zustand · Axios · React Router · React Icons · Recharts
-│   └── src/pages/<module>/  each module keeps its pages, components/ and services/
+│   ├── src/pages/<module>/  each module keeps its pages, components/ and services/
+│   ├── Caddyfile            web server: HTTPS, serves the app, forwards /api /t /u /webhooks to the API
+│   └── Dockerfile           builds the app and packages it with Caddy
+├── deploy/scripts/          setup-vps.sh, generate-env.sh, deploy.sh, create-admin.sh, backup.sh, restore.sh
+├── docs/                    API.md, DEPLOYMENT.md (Hostinger VPS guide)
 ├── e2e/smoke.cjs            browser smoke test (Playwright)
-├── docs/                    API.md, DEPLOYMENT.md
-├── docker-compose.yml       postgres 16, redis (noeviction), mailpit
-└── render.yaml              Render Blueprint (API, worker, web, Postgres, Key Value)
+├── docker-compose.yml       PRODUCTION stack: web, api, worker, migrate, postgres, redis
+├── docker-compose.dev.yml   LOCAL DEVELOPMENT: postgres, redis, mailpit
+└── .env.example             production settings (copy to .env on the server)
 ```
+
+## Deploy on Hostinger (VPS)
+
+```bash
+ssh root@YOUR_VPS_IP
+git clone https://github.com/rasulAbacco/abacco-crm.git /opt/abacco-crm && cd /opt/abacco-crm
+bash deploy/scripts/setup-vps.sh      # Docker + firewall (once)
+bash deploy/scripts/generate-env.sh   # asks your domain, creates .env with secrets (once)
+bash deploy/scripts/deploy.sh         # build + start; run again for every update
+```
+
+Then open `https://YOUR_DOMAIN/setup`. Full step-by-step guide: `docs/DEPLOYMENT.md`.
 
 ## Run locally
 
 Requirements: Node 22+, Docker.
 
 ```bash
-docker compose up -d                       # PostgreSQL, Redis, Mailpit (mail UI: http://localhost:8025)
+docker compose -f docker-compose.dev.yml up -d   # PostgreSQL, Redis, Mailpit (mail UI: http://localhost:8025)
 
 cd backend
 cp .env.example .env                       # fill JWT_ACCESS_SECRET and ENCRYPTION_KEYS (commands are in the file)
@@ -69,7 +86,7 @@ For safe local testing, add an SMTP account pointing at Mailpit: host `localhost
 ### Tests
 
 ```bash
-cd backend && npm test        # 50 tests against abacco_crm_test (runner refuses DBs without "test" in the name)
+cd backend && npm test        # 51 tests against abacco_crm_test (runner refuses DBs without "test" in the name)
 cd frontend && npm run build  # production build
 node e2e/smoke.cjs            # with API + web running; see the header of the file
 ```
@@ -80,7 +97,7 @@ The campaign tests run a real SMTP conversation against a local fake server and 
 
 ```bash
 npm run migrate:dev -- --name describe_change   # development
-npm run migrate:deploy                          # production (Render pre-deploy)
+npm run migrate:deploy                          # production (runs automatically in the migrate container)
 ```
 
 ## Known limitations (honest list)
@@ -90,7 +107,7 @@ npm run migrate:deploy                          # production (Render pre-deploy)
 - **Gmail OAuth2:** supported for sending, but you paste the client ID, secret and refresh token; there is no in-app "Sign in with Google" flow. App passwords work out of the box.
 - **Automations:** no date-based trigger yet; leads/contacts created by CSV import do not trigger automations.
 - **Holidays and custom fields** exist in the database and are used by scheduling / accepted by the API, but there is no screen to manage them yet.
-- **Not yet verified** against real Gmail, Zoho, Yahoo, Rediffmail or SES accounts, or on Render itself — everything was run locally (Postgres 16, Redis 7, fake SMTP, headless Chrome). Do a small real-world pilot before the first large campaign.
+- **Not yet verified** against real Gmail, Zoho, Yahoo, Rediffmail or SES accounts, or on a Hostinger VPS itself (the production setup was run locally without Docker Hub access: same commands, Caddy config and production dependencies) — everything was run locally (Postgres 16, Redis 7, fake SMTP, headless Chrome). Do a small real-world pilot before the first large campaign.
 - Request rate limiting uses in-memory storage: fine for one API instance; switch to a Redis store before running several.
 
-See `docs/API.md` for endpoints and `docs/DEPLOYMENT.md` for Render.
+See `docs/API.md` for endpoints and `docs/DEPLOYMENT.md` for hosting on Hostinger.

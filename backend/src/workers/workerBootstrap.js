@@ -1,4 +1,4 @@
-// Background worker process (Render "Background Worker"): campaign dispatch and
+// Background worker process (the "worker" container): campaign dispatch and
 // sending, automations and reminders. Start with: npm run worker
 process.env.TZ = 'UTC';
 process.env.SERVICE_NAME ??= 'abacco-worker';

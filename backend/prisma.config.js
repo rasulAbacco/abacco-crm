@@ -1,5 +1,5 @@
 // Prisma 7 configuration. DATABASE_URL is read from the environment
-// (Render injects it; locally it comes from .env).
+// (docker-compose sets it in production; locally it comes from backend/.env).
 import 'dotenv/config';
 import { defineConfig } from 'prisma/config';
 

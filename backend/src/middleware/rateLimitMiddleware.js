@@ -1,5 +1,5 @@
 // Request rate limits. The in-memory store is correct for a single API
-// instance (the Render plan in use); switch to a Redis store before scaling
+// instance (the Docker setup in use); switch to a Redis store before scaling
 // the API to more than one instance.
 import { rateLimit } from 'express-rate-limit';
 import config from '../config/environment.js';

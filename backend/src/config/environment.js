@@ -20,7 +20,7 @@ const schema = z.object({
   APP_URL: z.string().url().default('http://localhost:5173'), // frontend
   API_PUBLIC_URL: z.string().url().default('http://localhost:4000'), // tracking + unsubscribe links
   CORS_ORIGINS: z.string().default('http://localhost:5173'),
-  TRUST_PROXY: z.coerce.number().int().min(0).default(0), // Render: 1
+  TRUST_PROXY: z.coerce.number().int().min(0).default(0), // behind Caddy/nginx: 1
 
   // Auth
   JWT_ACCESS_SECRET: z.string().min(32, 'JWT_ACCESS_SECRET must be at least 32 characters'),

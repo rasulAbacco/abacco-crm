@@ -1,0 +1,33 @@
+# LOCAL DEVELOPMENT ONLY — database, Redis and a fake mailbox for your computer.
+#   docker compose -f docker-compose.dev.yml up -d
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: abacco
+      POSTGRES_PASSWORD: abacco
+      POSTGRES_DB: abacco_crm
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backend/docker/init-test-db.sql:/docker-entrypoint-initdb.d/10-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U abacco"]
+      interval: 5s
+      retries: 10
+
+  redis:
+    # Same Redis settings as production (noeviction is required by BullMQ).
+    image: redis:7-alpine
+    command: ["redis-server", "--maxmemory-policy", "noeviction", "--appendonly", "yes"]
+    ports: ["6379:6379"]
+    volumes: [redisdata:/data]
+
+  mailpit:
+    # Catches every email in development: UI at http://localhost:8025, SMTP on 1025.
+    image: axllent/mailpit:latest
+    ports: ["1025:1025", "8025:8025"]
+
+volumes:
+  pgdata:
+  redisdata:

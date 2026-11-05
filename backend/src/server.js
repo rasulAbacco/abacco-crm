@@ -15,7 +15,7 @@ const app = createApp();
 const server = app.listen(config.PORT, () => {
   logger.info({ port: config.PORT, env: config.NODE_ENV }, 'API listening');
 });
-server.keepAliveTimeout = 65_000; // longer than Render's load balancer idle timeout
+server.keepAliveTimeout = 65_000; // longer than typical reverse-proxy idle timeouts
 
 let shuttingDown = false;
 async function shutdown(signal) {

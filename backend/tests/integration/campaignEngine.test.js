@@ -106,6 +106,15 @@ describe('campaign sending', () => {
     expect(res.body.error.details.issues.length).toBeGreaterThanOrEqual(3);
   });
 
+  it('explains when the segment filter removes everyone', async () => {
+    const smtp = await smtpAccount({ fromEmail: 'seg@abacco.test' });
+    const list = await listWith(['s1@seg.test', 's2@seg.test']);
+    const c = await campaign(list, smtp, { segmentFilter: { tags: ['no-such-tag'], excludeTags: ['other'] } });
+    const p = (await ctx.api(ctx.ws1.id).get(`/api/v1/campaigns/${c.id}/preview`)).body.data;
+    expect(p.summary).toMatchObject({ inLists: 2, removedBySegment: 2, sendable: 0 });
+    expect(p.issues.join(' ')).toMatch(/None of the 2 list members match the segment \(tagged no-such-tag; not tagged other\)/);
+  });
+
   it('sends each recipient exactly once, excludes suppressed / no-consent / bounced, tracks and unsubscribes', async () => {
     const smtp = await smtpAccount({ fromEmail: 'send@abacco.test' });
     await ctx.api().post('/api/v1/suppressions', { emails: ['blocked@x.test'] });

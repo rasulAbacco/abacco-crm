@@ -1,4 +1,4 @@
-// Centralised Redis (Render Key Value / Valkey) connections.
+// Centralised Redis connections.
 // BullMQ needs maxRetriesPerRequest = null on worker connections, and the
 // instance must run with maxmemory-policy=noeviction or queued jobs can vanish.
 import IORedis from 'ioredis';

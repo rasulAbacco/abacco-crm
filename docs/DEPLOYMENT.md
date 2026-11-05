@@ -1,81 +1,171 @@
-# Deploying on Render
+# Deploying on Hostinger
 
-Sized for one primary user and about 2,000 emails per day.
+## Which Hostinger product
 
-## Services
+Use a **Hostinger VPS** (KVM plan, Ubuntu 22.04 or 24.04).
 
-| Render service | Purpose | Plan (starting point) |
+This CRM needs PostgreSQL, Redis and an always-running background worker that sends the campaign emails. A VPS gives you root access to run all of them. Shared / web hosting plans are made for websites, not for these services.
+
+| VPS size | Fits |
+|---|---|
+| KVM 2 (2 vCPU, 8 GB RAM) | **Recommended** — comfortable for 2,000+ emails/day and growth |
+| KVM 1 (1 vCPU, 4 GB RAM) | Works for one user and light use; builds are slower |
+
+Everything runs in Docker with one command. HTTPS certificates are automatic.
+
+```
+Internet ──443──▶  web (Caddy: HTTPS + React app)
+                     ├── /api, /t, /u, /webhooks ──▶ api (Express)
+                     │                                  │
+                  worker (sends emails, automations) ───┤
+                                                        ├── postgres (data, volume pgdata)
+                                                        └── redis (queues, volume redisdata)
+```
+
+Only ports 22 (SSH), 80 and 443 are open. PostgreSQL and Redis are not reachable from the internet.
+
+---
+
+## 1. Point your domain to the VPS
+
+In your DNS (Hostinger hPanel → Domains → DNS, or wherever the domain is managed):
+
+| Type | Name | Value |
 |---|---|---|
-| `abacco-api` — Web Service (Node) | REST API | Starter |
-| `abacco-db` — Render Postgres 16 | Source of truth | Basic-256mb (grow to Basic-1gb if needed) |
-| `abacco-redis` — Key Value | BullMQ queues, rate counters, cache | Starter, **maxmemory policy `noeviction`** |
-| `abacco-worker` — Background Worker | Campaign dispatch & sending, automations, reminders | Starter |
-| `abacco-web` — Static Site | React app, `/api/*` rewritten to the API | Free |
+| A | `crm` (for crm.yourdomain.com) | your VPS IP address |
 
-All in **one region** (Singapore is closest to India) so they talk over the private network. Region cannot be changed later.
+Wait until `ping crm.yourdomain.com` shows the VPS IP (usually minutes, up to a few hours).
 
-Why `noeviction`: with an eviction policy such as `allkeys-lru`, Redis may delete queued jobs under memory pressure. Postgres stays the source of truth for campaign recipients, so nothing is lost permanently, but jobs would have to be re-queued.
+## 2. Prepare the server (once)
 
-Why paid Key Value: the free plan does not persist data across restarts.
+```bash
+ssh root@YOUR_VPS_IP
+git clone https://github.com/rasulAbacco/abacco-crm.git /opt/abacco-crm
+cd /opt/abacco-crm
+bash deploy/scripts/setup-vps.sh
+```
 
-## First deploy
+This installs Docker, enables the firewall (SSH, HTTP, HTTPS only) and adds swap on small plans.
 
-1. Push the repository to GitHub.
-2. Render dashboard → **New → Blueprint** → choose the repo. Render reads `render.yaml`.
-3. Fill the `sync: false` variables when prompted:
-   - `ENCRYPTION_KEYS` — `1:` + output of `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`. **Store a copy safely; losing it makes saved SMTP passwords unreadable.**
-   - `SETUP_TOKEN` — a long random string (remove after setup).
-   - `APP_URL` — the frontend URL; `API_PUBLIC_URL` — the API URL (used in tracking and unsubscribe links); `CORS_ORIGINS` — the frontend URL.
-   - `SYSTEM_SMTP_*`, `SYSTEM_MAIL_FROM` — a mailbox for password-reset emails.
-4. Each deploy runs `npx prisma migrate deploy && node prisma/seed.js` before the new version starts. A failed migration stops the deploy and the old version keeps running.
-5. Create the primary account, either:
-   - Render Shell on `abacco-api`: `npm run create-admin -- --account "Abacco Technology" --name "Admin" --email you@abacco.com`, or
-   - `POST /api/v1/auth/setup` with `SETUP_TOKEN` (or the Setup screen at /setup in the web app).
-   Then delete `SETUP_TOKEN` from the environment.
-6. Check `https://<api>/ready`.
+> Private repository? Create a GitHub *deploy key* or *fine-grained token* with read access and use it for `git clone`.
 
-## Cookies and domains
+## 3. Create the settings file (once)
 
-The refresh cookie is `SameSite=Strict`. `*.onrender.com` subdomains count as **different sites**, so the browser would not send the cookie from `abacco-web.onrender.com` to `abacco-api.onrender.com`. Either:
+```bash
+bash deploy/scripts/generate-env.sh
+```
 
-- **Recommended:** the static site rewrites `/api/*` to the API (already in `render.yaml` — change the destination host if your API URL differs), so the browser only talks to one origin; or
-- use custom domains on one site, e.g. `crm.abaccotech.com` and `api.abaccotech.com`.
+It asks for your domain and an email (for HTTPS certificate notices). It then writes `.env` with strong random passwords and keys, and prints a one-time **SETUP_TOKEN**.
 
-Only if neither is possible, set `COOKIE_SAMESITE=none` (the `X-Requested-With` header check still blocks CSRF).
+**Back up `ENCRYPTION_KEYS` from `.env`** (password manager). Without it, saved SMTP passwords cannot be decrypted.
 
-## Email sending at 2,000 per day
+Optional — password-reset emails: edit `.env` and fill `SYSTEM_SMTP_HOST`, `SYSTEM_SMTP_USER`, `SYSTEM_SMTP_PASS`, `SYSTEM_MAIL_FROM` (for example a Gmail app password or Zoho mailbox).
 
-- Split volume across the Sales IDs' own SMTP accounts within each provider's limits; the engine never rotates accounts to get around a limit.
-- Gmail: personal accounts are limited to roughly 500 recipients a day and Workspace accounts to about 2,000, and both need an app password (2-Step Verification) or OAuth.
-- Amazon SES is the best fit for bulk campaigns: verify the sending domain, set up SPF, DKIM and DMARC, and leave the SES sandbox before sending to real recipients.
-- Gmail and Yahoo require SPF, DKIM and DMARC, one-click unsubscribe, and a spam-complaint rate under 0.3% for bulk senders.
+```bash
+nano .env
+```
 
-## Operations
+## 4. Deploy
 
-- Logs: JSON lines with a request id; passwords, tokens, cookies and SMTP credentials are redacted.
-- Backups: Render Postgres paid plans include point-in-time recovery; test a restore once.
-- Encryption key rotation: add `2:<new key>`, set `ENCRYPTION_ACTIVE_KEY_VERSION=2`, redeploy both API and worker, then re-enter each SMTP password (Edit → new password) so it is re-encrypted with the new key. Remove the old key only after that.
-- Scaling the API beyond one instance: move the rate limiter to the Redis store first.
+```bash
+bash deploy/scripts/deploy.sh
+```
 
-## After the first deploy
+The first build takes a few minutes. It:
+1. builds the images,
+2. runs database migrations (the `migrate` container),
+3. starts the API, the worker and the web server,
+4. gets the HTTPS certificate automatically.
 
-1. Open the web app → **Setup** (or use the Render shell command above) → create the account, then remove `SETUP_TOKEN`.
-2. **Sales IDs** → open each one → Edit → add the sender legal name and postal address (campaigns refuse to send without them).
-3. **SMTP accounts** → add accounts → assign them to Sales IDs → **Test** each one.
-4. **Settings → Countries & compliance** → review the consent rules and business hours per country.
-5. Import contacts into an **Email list**, ideally with a consent basis.
-6. Send a **test email** from a campaign, then a small real campaign before larger ones.
+Open `https://crm.yourdomain.com`.
 
-## Amazon SES events (bounces, complaints, deliveries)
+## 5. Create your account (once)
 
-1. In SES, create a configuration set or identity notifications for **Bounce**, **Complaint** and **Delivery** to an SNS topic.
-2. Add an HTTPS subscription to the topic: `https://<API_PUBLIC_URL>/webhooks/ses`. The API verifies the SNS signature and confirms the subscription automatically.
-3. Optionally set `SES_SNS_TOPIC_ARNS` to the topic ARN so only that topic is accepted.
-4. Enable "include original headers" so events match on the `X-Abacco-Recipient` header (Message-ID matching is the fallback).
+Either open `https://crm.yourdomain.com/setup` and enter the SETUP_TOKEN, or:
 
-## Worker behaviour
+```bash
+bash deploy/scripts/create-admin.sh "Abacco Technology" "Admin" admin@abaccotech.com
+```
 
-- The dispatcher runs every 15 seconds: it starts due scheduled campaigns, queues due recipients (500 per campaign per pass), recovers stuck rows and completes finished campaigns.
-- Sending concurrency is `WORKER_SEND_CONCURRENCY` (default 4). Throughput is bounded by your SMTP limits, not by the worker.
-- If the worker stops during a send, that recipient is marked **FAILED (unknown outcome)** rather than resent; use **Retry failed** if you accept a possible duplicate.
-- On deploy, Render sends SIGTERM; the worker finishes current jobs before exiting.
+Then remove the token: set `SETUP_TOKEN=` (empty) in `.env` and run `docker compose up -d`.
+
+## 6. First steps in the app
+
+1. **Sales IDs** → open SID-001 → **Edit** → add *Sender legal name* and *Sender postal address* (required before sending).
+2. **SMTP accounts** → add your mailboxes → tick the Sales IDs → **Test**.
+3. **Settings → Countries & compliance** → review consent rules and business hours.
+4. **Email lists** → add or import contacts.
+5. **Campaigns** → New campaign → **Send test** → Review → Send.
+
+---
+
+## Updating to a new version
+
+Push your changes to GitHub, then on the server:
+
+```bash
+cd /opt/abacco-crm
+bash deploy/scripts/deploy.sh
+```
+
+Migrations run automatically. The worker finishes the emails it is sending before it restarts.
+
+## Backups
+
+```bash
+bash deploy/scripts/backup.sh                     # writes backups/abacco_crm_<date>.sql.gz, keeps 14
+```
+
+Daily automatic backup at 02:30 (server time):
+
+```bash
+crontab -e
+# add this line:
+30 2 * * * cd /opt/abacco-crm && bash deploy/scripts/backup.sh >> backups/backup.log 2>&1
+```
+
+Also download backups regularly (e.g. `scp root@VPS:/opt/abacco-crm/backups/*.sql.gz .`) and enable Hostinger's VPS snapshots.
+
+Restore (replaces all data):
+
+```bash
+bash deploy/scripts/restore.sh backups/abacco_crm_20261105_023000.sql.gz
+```
+
+## Everyday commands
+
+| What | Command (in `/opt/abacco-crm`) |
+|---|---|
+| Status | `docker compose ps` |
+| API logs | `docker compose logs -f api` |
+| Sending logs | `docker compose logs -f worker` |
+| Restart everything | `docker compose restart` |
+| Stop / start | `docker compose down` / `docker compose up -d` |
+| Health | `curl https://crm.yourdomain.com/ready` |
+| Database shell | `docker compose exec postgres psql -U abacco abacco_crm` |
+| Reset a password | `docker compose run --rm -it api node scripts/resetPassword.js --email you@x.com` |
+
+`docker compose down -v` **deletes all data** (volumes). Never use `-v` unless you mean it.
+
+## Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| Browser shows a certificate error | DNS not pointing to the VPS yet, or port 80/443 blocked. Check `docker compose logs web`. |
+| `deploy.sh` says API not healthy | `docker compose logs migrate api` — usually a wrong value in `.env`. |
+| Campaign stays at "Sending", nothing sent | `docker compose logs worker`; check the SMTP account status (Test it). |
+| Build stops with "killed" | Not enough RAM — `setup-vps.sh` adds swap; or use a bigger plan. |
+| Changed `.env` | `docker compose up -d` (recreates containers with the new values). |
+
+## Email deliverability (important at 2,000/day)
+
+- Gmail personal ≈ 500 recipients/day, Google Workspace ≈ 2,000/day per mailbox. Set each SMTP account's limits to your real plan; the system never exceeds them and never rotates accounts to get around limits.
+- For your own domain: publish **SPF**, **DKIM** and **DMARC** records (your mail provider shows the values). Gmail and Yahoo require them for bulk senders, plus one-click unsubscribe (built in) and a spam-complaint rate below 0.3%.
+- Amazon SES: subscribe an SNS topic to `https://crm.yourdomain.com/webhooks/ses` for bounces/complaints (see README).
+
+## Security notes
+
+- `.env` is created with permission 600 and is git-ignored. Never commit it.
+- Keep Ubuntu updated: `apt update && apt upgrade` monthly.
+- Use SSH keys for root login and disable password SSH login in Hostinger's VPS panel when possible.
+- Encryption key rotation: add `2:<new key>` to `ENCRYPTION_KEYS`, set `ENCRYPTION_ACTIVE_KEY_VERSION=2`, run `docker compose up -d`, then re-enter each SMTP password (Edit → new password). Remove the old key only afterwards.

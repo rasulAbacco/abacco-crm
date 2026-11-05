@@ -1,0 +1,35 @@
+# One domain serves everything, so the login cookie stays same-site.
+# DOMAIN comes from the .env file (e.g. crm.abaccotech.com). Caddy gets and
+# renews the HTTPS certificate automatically once the domain points here.
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	# API, tracking pixels / click redirects, unsubscribe pages and SES webhooks
+	@backend path /api/* /t/* /u/* /webhooks/* /health /ready
+	handle @backend {
+		reverse_proxy api:4000
+	}
+
+	# Built assets never change name-wise, so they can be cached for a year.
+	@assets path /assets/*
+	header @assets Cache-Control "public, max-age=31536000, immutable"
+
+	# React app (client-side routing → always fall back to index.html)
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}
