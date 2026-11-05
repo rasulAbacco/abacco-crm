@@ -1,10 +1,5 @@
-# Builds the two Docker images on GitHub's servers and publishes them to
-# GitHub Container Registry (ghcr.io) on every push to main.
-# Hostinger's Docker Manager then only has to download and run them.
-#
-#   ghcr.io/<owner>/abacco-crm-backend:latest   (API, worker, migrations)
-#   ghcr.io/<owner>/abacco-crm-web:latest       (React app + Caddy HTTPS)
-name: Build Docker images
+
+name: Build and deploy Abacco CRM
 
 on:
   push:
@@ -15,9 +10,14 @@ permissions:
   contents: read
   packages: write
 
+concurrency:
+  group: abacco-crm-production
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
+
     strategy:
       matrix:
         include:
@@ -25,10 +25,11 @@ jobs:
             context: backend
           - name: web
             context: frontend
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Image name (registry names must be lowercase)
+      - name: Image name
         id: img
         run: echo "name=ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/abacco-crm-${{ matrix.name }}" >> "$GITHUB_OUTPUT"
 
@@ -50,3 +51,73 @@ jobs:
             ${{ steps.img.outputs.name }}:${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  deploy:
+    name: Deploy to Hostinger VPS
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy application
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+
+          script: |
+            set -eu
+
+            cd /docker/abacco-sales-crm
+
+            echo "Pulling latest Docker images..."
+            docker compose pull migrate api worker web
+
+            echo "Running database migrations..."
+            docker compose run --rm migrate
+
+            echo "Restarting API and worker..."
+            docker compose up -d --no-deps api worker
+
+            echo "Waiting for API health check..."
+
+            api_id="$(docker compose ps -q api)"
+
+            if [ -z "$api_id" ]; then
+              echo "ERROR: API container not found"
+              docker compose logs --tail=100 api
+              exit 1
+            fi
+
+            healthy=false
+
+            for attempt in $(seq 1 60); do
+              status="$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' "$api_id" 2>/dev/null || true)"
+
+              if [ "$status" = "healthy" ]; then
+                healthy=true
+                break
+              fi
+
+              if [ "$status" = "unhealthy" ] || [ "$status" = "no-healthcheck" ]; then
+                break
+              fi
+
+              sleep 5
+            done
+
+            if [ "$healthy" != "true" ]; then
+              echo "ERROR: API did not become healthy"
+              docker compose logs --tail=100 api
+              exit 1
+            fi
+
+            echo "Updating website..."
+            docker compose up -d --no-deps web
+
+            echo "Final deployment status:"
+            docker compose ps
+
+            echo "Deployment completed successfully!"
