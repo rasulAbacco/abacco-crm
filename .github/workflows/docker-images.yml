@@ -72,6 +72,11 @@ jobs:
 
             cd /docker/abacco-sales-crm
 
+            # Always use the existing production Compose project
+            export COMPOSE_PROJECT_NAME=abacco-sales-crm
+
+            echo "Using Compose project: $COMPOSE_PROJECT_NAME"
+
             echo "Pulling latest Docker images..."
             docker compose pull migrate api worker web
 
@@ -113,6 +118,8 @@ jobs:
               docker compose logs --tail=100 api
               exit 1
             fi
+
+            echo "API is healthy!"
 
             echo "Updating website..."
             docker compose up -d --no-deps web
