@@ -16,6 +16,7 @@ import { parseUpload, pick } from "../../services/files/tabularService.js";
 import { publish } from "../../services/events/eventBus.js";
 import { buildScopeWhere } from "../../utils/scope.js";
 import { createWorkspaceRecords } from "../sales-ids/salesId.service.js";
+import { parseCcEmails } from "../../utils/ccEmails.js";
 
 // Simple, explainable lead score (0-100) used when the user does not set one.
 export function computeScore(l) {
@@ -353,6 +354,11 @@ export async function buildEmailAudience(scope, ids, listName, ctx) {
           },
           select: { id: true },
         });
+        if (c && l.ccEmails?.length)
+          await tx.contact.update({
+            where: { id: c.id },
+            data: { ccEmails: l.ccEmails },
+          });
         if (!c) {
           c = await tx.contact.create({
             data: {
@@ -372,6 +378,7 @@ export async function buildEmailAudience(scope, ids, listName, ctx) {
               timezoneSource: l.timezoneSource,
               locale: l.locale,
               source: "Lead",
+              ccEmails: l.ccEmails ?? [],
             },
             select: { id: true },
           });
@@ -588,6 +595,7 @@ export async function importLeads(scope, file, opts, ctx) {
   const newResponse = [];
   const newCall = [];
   const createdSalesIds = [];
+  const missingSalesIds = new Set();
   let createdCount = 0,
     updatedCount = 0,
     skippedCount = 0;
@@ -616,9 +624,10 @@ export async function importLeads(scope, file, opts, ctx) {
         byKey.set(code.toLowerCase(), ws);
         createdSalesIds.push(code);
       } else {
+        missingSalesIds.add(sid);
         errors.push({
           line,
-          message: `Unknown Sales ID "${sid}". Create it first, or tick "Create missing Sales IDs".`,
+          message: `Unknown Sales ID "${sid}". Create it first, or tick "Create Sales IDs that do not exist yet".`,
         });
         continue;
       }
@@ -658,6 +667,16 @@ export async function importLeads(scope, file, opts, ctx) {
       continue;
     }
     const emailNormalized = normalizeEmail(email);
+    const cc = parseCcEmails(
+      pick(r, "ccmail", "ccemail", "cc", "ccemails", "ccmails", "ccaddress"),
+    );
+    if (cc.invalid.length) {
+      errors.push({
+        line,
+        message: `Invalid CC Mail "${cc.invalid.join(", ")}".`,
+      });
+      continue;
+    }
     if (emailNormalized) {
       const key = `${ws.id}:${emailNormalized}`;
       if (seen.has(key)) {
@@ -779,6 +798,7 @@ export async function importLeads(scope, file, opts, ctx) {
       basicPriceMinor,
       premiumPriceMinor,
       dataCount,
+      ccEmails: cc.emails.filter((e) => e !== emailNormalized),
     };
     data.score = computeScore(data);
     perSalesId[ws.code] ??= { created: 0, updated: 0, skipped: 0 };
@@ -802,7 +822,10 @@ export async function importLeads(scope, file, opts, ctx) {
             where: { id: existing.id },
             data: Object.fromEntries(
               Object.entries(patch).filter(
-                ([, v]) => v !== null && v !== undefined,
+                ([, v]) =>
+                  v !== null &&
+                  v !== undefined &&
+                  !(Array.isArray(v) && v.length === 0),
               ),
             ),
           });
@@ -865,6 +888,7 @@ export async function importLeads(scope, file, opts, ctx) {
     ...done,
     perSalesId,
     createdSalesIds,
+    missingSalesIds: [...missingSalesIds],
     newStatuses: { response: newResponse, call: newCall },
   };
 }

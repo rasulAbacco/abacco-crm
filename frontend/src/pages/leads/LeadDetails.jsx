@@ -166,6 +166,7 @@ export default function LeadDetails() {
                     </a>
                   ) : null,
                 ],
+                ["CC Mail", l.ccEmails?.length ? l.ccEmails.join(", ") : null],
                 ["Phone", l.phoneE164 ?? l.phoneRaw],
                 [
                   "Company",

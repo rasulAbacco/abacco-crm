@@ -8,6 +8,7 @@ import {
 } from "react-router-dom";
 import { FiArrowLeft, FiCheck, FiSend, FiSave } from "react-icons/fi";
 import { campaignService } from "./services/campaignService";
+import SenderPicker from "./components/SenderPicker";
 import api, { errorMessage } from "../../services/axiosInstance";
 import { useSalesIdStore } from "../../store/salesIdStore";
 import { useAuthStore } from "../../store/authStore";
@@ -20,7 +21,6 @@ import {
   Alert,
   Spinner,
   Badge,
-  StatusBadge,
   Modal,
 } from "../../components/common/ui";
 import {
@@ -46,7 +46,7 @@ import {
 const STEPS = [
   "Details",
   "Audience",
-  "SMTP accounts",
+  "Send from",
   "Content",
   "Sending",
   "Review",
@@ -65,6 +65,7 @@ function blank(ws) {
     html: "",
     listIds: [],
     smtpAccountIds: [],
+    includeCc: true,
     segmentFilter: { countryCodes: [], tags: [], excludeTags: [] },
     trackOpens: true,
     trackClicks: true,
@@ -152,9 +153,18 @@ export default function CreateCampaign() {
     api
       .get("/email-lists", { params: { pageSize: 100 }, ...h })
       .then((r) => setLists(r.data.data));
-    campaignService
-      .eligibleSmtp(c.ownerWorkspaceId)
-      .then((r) => setSmtp(r.data.data));
+    campaignService.eligibleSmtp(c.ownerWorkspaceId).then((r) => {
+      const accounts = r.data.data;
+      setSmtp(accounts);
+      // Default sender: the Sales ID's main email (else its alternate).
+      setC((prev) => {
+        if (!prev || prev.smtpAccountIds.length) return prev;
+        const def =
+          accounts.find((a) => a.role === "MAIN" && a.isEnabled) ??
+          accounts.find((a) => a.role === "ALTERNATE" && a.isEnabled);
+        return def ? { ...prev, smtpAccountIds: [def.id] } : prev;
+      });
+    });
     api
       .get("/templates", { params: { pageSize: 100 }, ...h })
       .then((r) => setTemplates(r.data.data));
@@ -173,6 +183,7 @@ export default function CreateCampaign() {
       html: c.html || null,
       listIds: c.listIds,
       smtpAccountIds: c.smtpAccountIds,
+      includeCc: c.includeCc,
       trackOpens: c.trackOpens,
       trackClicks: c.trackClicks,
       scheduleMode: c.scheduleMode,
@@ -535,48 +546,16 @@ export default function CreateCampaign() {
           </div>
         )}
         {step === 2 && (
-          <div className="space-y-3">
-            {smtp.length === 0 ? (
-              <Alert>
-                No SMTP account is assigned to this Sales ID.{" "}
-                <Link className="link" to="/smtp-accounts">
-                  Assign one
-                </Link>
-                .
-              </Alert>
-            ) : (
-              smtp.map((a) => (
-                <label
-                  key={a.id}
-                  className={`flex cursor-pointer flex-wrap items-center justify-between gap-2 rounded-lg border p-3 ${c.smtpAccountIds.includes(a.id) ? "border-brand-600 bg-brand-50" : "border-ink-200"} ${!a.isEnabled ? "opacity-60" : ""}`}
-                >
-                  <span className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      disabled={!a.isEnabled}
-                      checked={c.smtpAccountIds.includes(a.id)}
-                      onChange={() => toggle("smtpAccountIds", a.id)}
-                    />
-                    <span>
-                      <span className="text-sm font-medium">{a.name}</span>
-                      <span className="block text-xs text-ink-500">
-                        {a.fromEmail} · {humanize(a.provider)}
-                      </span>
-                    </span>
-                  </span>
-                  <span className="flex items-center gap-2 text-xs text-ink-500">
-                    <StatusBadge value={a.isEnabled ? a.health : "INACTIVE"} />{" "}
-                    up to {a.hourlyLimit}/h · {a.dailyLimit}/day
-                  </span>
-                </label>
-              ))
-            )}
-            <p className="text-xs text-ink-500">
-              Each email is sent from the chosen account's own From address. If
-              one account fails, pending recipients move to another chosen
-              account; limits are never exceeded.
-            </p>
-          </div>
+          <SenderPicker
+            smtp={smtp}
+            value={c.smtpAccountIds[0] ?? ""}
+            onChange={(sid) => set({ smtpAccountIds: [sid] })}
+            includeCc={c.includeCc !== false}
+            onIncludeCc={(v) => set({ includeCc: v })}
+            salesIdCode={
+              options.find((o) => o.id === c.ownerWorkspaceId)?.code ?? ""
+            }
+          />
         )}
         {step === 3 && (
           <div className="space-y-4">
@@ -766,7 +745,7 @@ export default function CreateCampaign() {
                 </div>
                 <div className="rounded-lg border border-ink-200 p-3">
                   <p className="text-xs text-ink-500">
-                    Daily capacity of chosen SMTP
+                    Daily capacity of the sender
                   </p>
                   <p className="text-lg font-semibold">
                     {num(preview.capacityPerDay)}

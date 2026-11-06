@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Modal, Spinner } from "../../../components/common/ui";
 import { FormGrid } from "../../../components/forms/fields";
 import { salesIdService } from "../services/salesIdService";
@@ -6,6 +6,7 @@ import { errorMessage, fieldErrors } from "../../../services/axiosInstance";
 import { toast } from "../../../store/uiStore";
 import { salesIdOptions } from "../../../services/commonService";
 import { useSalesIdStore } from "../../../store/salesIdStore";
+import api from "../../../services/axiosInstance";
 
 export default function SalesIdForm({ open, onClose, item, onSaved }) {
   const keys = [
@@ -17,6 +18,8 @@ export default function SalesIdForm({ open, onClose, item, onSaved }) {
     "defaultTimezone",
     "senderLegalName",
     "senderPostalAddress",
+    "primarySmtpAccountId",
+    "alternateSmtpAccountId",
   ];
   const [v, setV] = useState(
     Object.fromEntries(keys.map((k) => [k, item?.[k] ?? ""])),
@@ -24,6 +27,18 @@ export default function SalesIdForm({ open, onClose, item, onSaved }) {
   const [errors, setErrors] = useState({});
   const [busy, setBusy] = useState(false);
   const setOptions = useSalesIdStore((s) => s.setOptions);
+  const [accounts, setAccounts] = useState([]);
+  useEffect(() => {
+    // Every SMTP account of the CRM, not only the ones already assigned.
+    api
+      .get("/smtp-accounts", { headers: { "X-Sales-Id": "all" } })
+      .then((r) => setAccounts(r.data.data))
+      .catch(() => {});
+  }, []);
+  const senderOptions = accounts.map((a) => [
+    a.id,
+    `${a.fromEmail} (${a.name})`,
+  ]);
   const save = async () => {
     setBusy(true);
     try {
@@ -106,6 +121,26 @@ export default function SalesIdForm({ open, onClose, item, onSaved }) {
             label: "Default timezone",
             type: "timezone",
             placeholder: "Account default",
+          },
+          {
+            name: "primarySmtpAccountId",
+            label: "Main email (sends this Sales ID's campaigns)",
+            type: "select",
+            options: senderOptions,
+            placeholder: accounts.length
+              ? "Choose…"
+              : "Add an SMTP account first",
+            hint: "e.g. robert.jackson@crmconnectleads.com",
+          },
+          {
+            name: "alternateSmtpAccountId",
+            label: "Alternate email",
+            type: "select",
+            options: senderOptions.filter(
+              ([id]) => id !== v.primarySmtpAccountId,
+            ),
+            placeholder: "None",
+            hint: "e.g. a Gmail address. Used only when you choose it in a campaign.",
           },
           {
             name: "senderLegalName",

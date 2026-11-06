@@ -2,6 +2,7 @@ import { z } from "zod";
 import { listQuerySchema } from "../../utils/pagination.js";
 import { countryField, timezoneField } from "../../utils/intl.js";
 import { amountField, currencyField } from "../../utils/money.js";
+import { ccEmailsField } from "../../utils/ccEmails.js";
 
 export const LEAD_STATUSES = [
   "NEW",
@@ -59,6 +60,7 @@ const fields = {
   callNotes: text(5000),
   previousPitch: text(2000),
   followUpPitch: text(2000),
+  ccEmails: ccEmailsField.optional(),
   priceCurrency: opt(currencyField),
   basicPrice: opt(amountField),
   premiumPrice: opt(amountField),

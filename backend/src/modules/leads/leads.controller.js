@@ -30,6 +30,11 @@ export const CLIENT_COLUMNS = [
   { key: "fullName", header: "Client Name" },
   { key: "email", header: "Client Email" },
   {
+    key: "ccEmails",
+    header: "CC Mail",
+    value: (r) => (r.ccEmails ?? []).join(", "),
+  },
+  {
     key: "phone",
     header: "Phone Number",
     value: (r) => r.phoneRaw ?? r.phoneE164,

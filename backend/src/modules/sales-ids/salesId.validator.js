@@ -47,6 +47,9 @@ const base = {
   defaultTimezone: timezoneSchema.nullable().optional(),
   senderLegalName: z.string().trim().max(200).nullable().optional(),
   senderPostalAddress: z.string().trim().max(500).nullable().optional(),
+  // Main sending email of this Sales ID, and its alternate (e.g. a Gmail address).
+  primarySmtpAccountId: z.string().uuid().nullable().optional(),
+  alternateSmtpAccountId: z.string().uuid().nullable().optional(),
 };
 
 export const createSchema = z

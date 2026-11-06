@@ -26,6 +26,28 @@ const PUBLIC_FIELDS = {
   defaultTimezone: true,
   senderLegalName: true,
   senderPostalAddress: true,
+  primarySmtpAccountId: true,
+  alternateSmtpAccountId: true,
+  primarySmtp: {
+    select: {
+      id: true,
+      name: true,
+      fromEmail: true,
+      provider: true,
+      health: true,
+      isEnabled: true,
+    },
+  },
+  alternateSmtp: {
+    select: {
+      id: true,
+      name: true,
+      fromEmail: true,
+      provider: true,
+      health: true,
+      isEnabled: true,
+    },
+  },
   createdAt: true,
   updatedAt: true,
 };
@@ -44,6 +66,40 @@ async function nextCode(tx, accountId) {
 }
 
 /** Creates a Sales ID with its settings row and default pipeline (inside tx). */
+/**
+ * Checks the main / alternate sending accounts belong to this CRM account and
+ * assigns them to the Sales ID so they appear under its SMTP accounts.
+ */
+async function applySenders(
+  tx,
+  accountId,
+  workspaceId,
+  { primarySmtpAccountId, alternateSmtpAccountId },
+) {
+  const ids = [primarySmtpAccountId, alternateSmtpAccountId].filter(Boolean);
+  if (primarySmtpAccountId && primarySmtpAccountId === alternateSmtpAccountId) {
+    throw new AppError(
+      400,
+      "SAME_SENDER",
+      "The main and alternate email must be different accounts.",
+    );
+  }
+  if (!ids.length) return;
+  const found = await tx.smtpAccount.count({
+    where: { id: { in: ids }, accountId, deletedAt: null },
+  });
+  if (found !== ids.length)
+    throw new AppError(
+      400,
+      "INVALID_SMTP",
+      "Choose SMTP accounts from your SMTP accounts page.",
+    );
+  await tx.smtpAccountWorkspace.createMany({
+    data: ids.map((smtpAccountId) => ({ smtpAccountId, workspaceId })),
+    skipDuplicates: true,
+  });
+}
+
 export async function createWorkspaceRecords(tx, accountId, data) {
   // A custom code (e.g. REP-101) can be chosen; otherwise SID-001, SID-002, …
   let code = data.code ? data.code.toUpperCase() : null;
@@ -80,9 +136,22 @@ export async function createWorkspaceRecords(tx, accountId, data) {
         },
       },
     },
+    select: { id: true },
+  });
+  if (data.primarySmtpAccountId || data.alternateSmtpAccountId) {
+    await applySenders(tx, accountId, workspace.id, data);
+    await tx.salesWorkspace.update({
+      where: { id: workspace.id },
+      data: {
+        primarySmtpAccountId: data.primarySmtpAccountId ?? null,
+        alternateSmtpAccountId: data.alternateSmtpAccountId ?? null,
+      },
+    });
+  }
+  return tx.salesWorkspace.findUnique({
+    where: { id: workspace.id },
     select: PUBLIC_FIELDS,
   });
-  return workspace;
 }
 
 async function findOwned(accountId, id, db = prisma) {
@@ -234,6 +303,21 @@ export async function updateWorkspace(accountId, id, data, ctx) {
     }
   }
   return prisma.$transaction(async (tx) => {
+    if (
+      fields.primarySmtpAccountId !== undefined ||
+      fields.alternateSmtpAccountId !== undefined
+    ) {
+      await applySenders(tx, accountId, id, {
+        primarySmtpAccountId:
+          fields.primarySmtpAccountId !== undefined
+            ? fields.primarySmtpAccountId
+            : before.primarySmtpAccountId,
+        alternateSmtpAccountId:
+          fields.alternateSmtpAccountId !== undefined
+            ? fields.alternateSmtpAccountId
+            : before.alternateSmtpAccountId,
+      });
+    }
     const ws = await tx.salesWorkspace.update({
       where: { id },
       data: fields,

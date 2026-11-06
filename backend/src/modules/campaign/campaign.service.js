@@ -150,8 +150,8 @@ async function toData(scope, workspaceId, input, existing) {
     if (!smtpAccountIds.every((id) => ok.has(id)))
       throw new AppError(
         400,
-        "SMTP_NOT_ASSIGNED",
-        "Only SMTP accounts assigned to this Sales ID can be used.",
+        "SMTP_NOT_FOUND",
+        "That email account does not exist. Add it under SMTP accounts first.",
       );
     relations.smtpAccountIds = smtpAccountIds;
   }
@@ -223,6 +223,15 @@ export async function get(scope, id) {
 export async function create(scope, input, ctx) {
   const { ownerWorkspaceId, ...rest } = input;
   const ws = await resolveWriteWorkspace(scope, ownerWorkspaceId);
+  // By default a campaign sends from the Sales ID's own main email.
+  if (rest.smtpAccountIds === undefined) {
+    const own = await prisma.salesWorkspace.findUnique({
+      where: { id: ws.id },
+      select: { primarySmtpAccountId: true },
+    });
+    if (own?.primarySmtpAccountId)
+      rest.smtpAccountIds = [own.primarySmtpAccountId];
+  }
   const { data, relations } = await toData(scope, ws.id, rest);
   const c = await prisma.$transaction(async (tx) => {
     const created = await tx.campaign.create({
@@ -369,10 +378,11 @@ async function readiness(c) {
   const chosen = assigned.filter((a) =>
     c.smtpAccounts.some((s) => s.id === a.id),
   );
-  if (!c.smtpAccounts.length) issues.push("Choose at least one SMTP account.");
+  if (!c.smtpAccounts.length)
+    issues.push("Choose the email account to send from.");
   else if (!chosen.some((a) => a.isEnabled && a.health !== "AUTH_FAILED"))
     issues.push(
-      "None of the chosen SMTP accounts is enabled and signed in. Test them under SMTP accounts.",
+      `The sender ${c.smtpAccounts[0].fromEmail} is disabled or its sign-in failed. Test it under SMTP accounts, or choose the alternate email.`,
     );
   if (
     c.scheduleMode === "FIXED_TIME" &&
@@ -614,7 +624,7 @@ export async function resume(scope, id, ctx) {
     )
   ) {
     throw conflict(
-      "No usable SMTP account. Fix or add one (SMTP accounts → Test), then resume.",
+      "The sender email is disabled or its sign-in failed. Fix it (SMTP accounts → Test) or choose another sender, then resume.",
       "NO_ELIGIBLE_SMTP",
     );
   }
@@ -767,7 +777,6 @@ export async function sendTest(scope, id, { to, smtpAccountId }, ctx) {
       accountId: c.accountId,
       deletedAt: null,
       isEnabled: true,
-      workspaces: { some: { workspaceId: c.ownerWorkspaceId } },
       ...(smtpAccountId
         ? { id: smtpAccountId }
         : { id: { in: c.smtpAccounts.map((s) => s.id) } }),
@@ -778,7 +787,7 @@ export async function sendTest(scope, id, { to, smtpAccountId }, ctx) {
     throw new AppError(
       400,
       "NO_SMTP",
-      "Choose an enabled SMTP account assigned to this Sales ID.",
+      "Choose the email account to send from (it must be enabled).",
     );
   const ws = await prisma.salesWorkspace.findUnique({
     where: { id: c.ownerWorkspaceId },

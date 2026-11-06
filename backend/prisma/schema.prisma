@@ -404,23 +404,28 @@ model PasswordResetToken {
 // ----------------------------------------------------------------------------- Sales IDs (workspaces)
 
 model SalesWorkspace {
-  id                  String          @id @default(uuid()) @db.Uuid
-  accountId           String          @db.Uuid
-  code                String // e.g. SID-001, unique per account, never reused
-  name                String
-  description         String?
-  status              WorkspaceStatus @default(ACTIVE)
-  isDefault           Boolean         @default(false)
-  color               String?
-  defaultCurrency     String?         @db.Char(3) // falls back to Account.defaultCurrency
-  defaultTimezone     String? // falls back to Account.defaultTimezone
-  senderLegalName     String? // required in campaign footers before sending
-  senderPostalAddress String?
-  createdAt           DateTime        @default(now()) @db.Timestamptz(3)
-  updatedAt           DateTime        @updatedAt @db.Timestamptz(3)
-  deletedAt           DateTime?       @db.Timestamptz(3)
+  id                     String          @id @default(uuid()) @db.Uuid
+  accountId              String          @db.Uuid
+  code                   String // e.g. SID-001, unique per account, never reused
+  name                   String
+  description            String?
+  status                 WorkspaceStatus @default(ACTIVE)
+  isDefault              Boolean         @default(false)
+  color                  String?
+  defaultCurrency        String?         @db.Char(3) // falls back to Account.defaultCurrency
+  defaultTimezone        String? // falls back to Account.defaultTimezone
+  senderLegalName        String? // required in campaign footers before sending
+  senderPostalAddress    String?
+  // Campaigns send from the main email by default; the alternate is chosen explicitly.
+  primarySmtpAccountId   String?         @db.Uuid
+  alternateSmtpAccountId String?         @db.Uuid
+  createdAt              DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime        @updatedAt @db.Timestamptz(3)
+  deletedAt              DateTime?       @db.Timestamptz(3)
 
   account         Account                 @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  primarySmtp     SmtpAccount?            @relation("WorkspacePrimarySmtp", fields: [primarySmtpAccountId], references: [id], onDelete: SetNull)
+  alternateSmtp   SmtpAccount?            @relation("WorkspaceAlternateSmtp", fields: [alternateSmtpAccountId], references: [id], onDelete: SetNull)
   settings        SalesWorkspaceSettings?
   leads           Lead[]
   contacts        Contact[]
@@ -523,6 +528,7 @@ model Contact {
   emailNormalized  String?
   phoneE164        String?
   phoneRaw         String?
+  ccEmails         String[]       @default([]) // copied on every campaign email to this contact
   designation      String?
   countryCode      String?        @db.Char(2)
   region           String?
@@ -595,6 +601,7 @@ model Lead {
   callNotes         String?
   previousPitch     String?
   followUpPitch     String?
+  ccEmails          String[]       @default([]) // "CC Mail": copied on campaign emails to this lead
   priceCurrency     String?        @db.Char(3)
   basicPriceMinor   BigInt? // typed by the user; never calculated or converted
   premiumPriceMinor BigInt?
@@ -955,13 +962,15 @@ model SmtpAccount {
   updatedAt            DateTime     @updatedAt @db.Timestamptz(3)
   deletedAt            DateTime?    @db.Timestamptz(3)
 
-  account     Account                @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  workspaces  SmtpAccountWorkspace[]
-  usage       SmtpUsageWindow[]
-  campaigns   CampaignSmtpAccount[]
-  recipients  CampaignRecipient[]
-  events      EmailEvent[]
-  automations Automation[]
+  account      Account                @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  workspaces   SmtpAccountWorkspace[]
+  primaryFor   SalesWorkspace[]       @relation("WorkspacePrimarySmtp")
+  alternateFor SalesWorkspace[]       @relation("WorkspaceAlternateSmtp")
+  usage        SmtpUsageWindow[]
+  campaigns    CampaignSmtpAccount[]
+  recipients   CampaignRecipient[]
+  events       EmailEvent[]
+  automations  Automation[]
 
   @@unique([accountId, fromEmail], map: "smtp_accounts_account_from_live_key", where: raw("\"deletedAt\" IS NULL"))
   @@index([accountId, isEnabled, health])
@@ -1185,6 +1194,7 @@ model Campaign {
   fallbackTimezone     String?
   pastTimeBehaviour    PastTimeBehaviour @default(NEXT_DAY)
   respectBusinessHours Boolean           @default(false)
+  includeCc            Boolean           @default(true) // copy each contact's CC addresses
   // Pitch price is typed by the user; the app never calculates or converts it.
   pitchAmountMinor     BigInt?
   pitchCurrency        String?           @db.Char(3)
@@ -1244,6 +1254,7 @@ model CampaignRecipient {
   email             String
   emailNormalized   String
   mergeData         Json? // snapshot of firstName, lastName, company … at enqueue time
+  ccEmails          String[]        @default([]) // snapshot of the contact's CC addresses
   countryCode       String?         @db.Char(2)
   recipientTimezone String?
   scheduledAtUtc    DateTime?       @db.Timestamptz(3)

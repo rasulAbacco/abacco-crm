@@ -222,6 +222,15 @@ export async function update(accountId, id, input, ctx) {
       await tx.smtpAccountWorkspace.deleteMany({
         where: { smtpAccountId: id, workspaceId: { notIn: ids } },
       });
+      // Unassigned from a Sales ID → it can no longer be that Sales ID's main / alternate email.
+      await tx.salesWorkspace.updateMany({
+        where: { accountId, primarySmtpAccountId: id, id: { notIn: ids } },
+        data: { primarySmtpAccountId: null },
+      });
+      await tx.salesWorkspace.updateMany({
+        where: { accountId, alternateSmtpAccountId: id, id: { notIn: ids } },
+        data: { alternateSmtpAccountId: null },
+      });
       for (const workspaceId of ids)
         await tx.smtpAccountWorkspace.upsert({
           where: {
@@ -260,6 +269,14 @@ export async function remove(accountId, id, ctx) {
       data: { deletedAt: new Date(), isEnabled: false },
     });
     await tx.smtpAccountWorkspace.deleteMany({ where: { smtpAccountId: id } });
+    await tx.salesWorkspace.updateMany({
+      where: { accountId, primarySmtpAccountId: id },
+      data: { primarySmtpAccountId: null },
+    });
+    await tx.salesWorkspace.updateMany({
+      where: { accountId, alternateSmtpAccountId: id },
+      data: { alternateSmtpAccountId: null },
+    });
     await writeAudit(
       {
         accountId,

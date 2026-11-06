@@ -85,7 +85,7 @@ export default function LeadList() {
         onCreate={() => navigate("/leads/new")}
         emptyIcon={FiUserPlus}
         reloadKey={reloadKey}
-        importHint="Same layout as your tracker: Sales ID, Client Name, Client Email, Phone Number, Response Status, Call Status, Call Notes, Previous Pitch, Follow Up Pitch, Basic Package Price ($), Premium Package Price ($), Data Count (Rows). Rows go to the Sales ID in their own column (code like REP-101, or name)."
+        importHint="Same layout as your tracker: Sales ID, Client Name, Client Email, CC Mail (optional, several separated by commas), Phone Number, Response Status, Call Status, Call Notes, Previous Pitch, Follow Up Pitch, Basic Package Price ($), Premium Package Price ($), Data Count (Rows). Rows go to the Sales ID in their own column (code like REP-101, or name)."
         templateUrl="/leads/import-template"
         importOwnerOptional
         importOptions={[

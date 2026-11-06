@@ -17,6 +17,7 @@ export const toLeadForm = (l = {}) => ({
   firstName: l.firstName ?? "",
   lastName: l.lastName ?? "",
   email: l.email ?? "",
+  ccEmails: (l.ccEmails ?? []).join(", "),
   phone: l.phoneRaw ?? "",
   companyName: l.companyName ?? "",
   companyId: l.companyId ?? null,
@@ -129,6 +130,13 @@ export default function LeadForm({
               label: "Phone",
               hint: "Any format; include the country code for international numbers (e.g. +44…)",
             },
+            {
+              name: "ccEmails",
+              label: "CC Mail",
+              placeholder: "e.g. manager@client.com, team@client.com",
+              hint: "Copied on campaign emails to this client. Separate several with commas (max 5).",
+            },
+            { name: "_ccspacer", render: () => null },
             { name: "designation", label: "Designation" },
             { name: "companyName", label: "Company name" },
             {

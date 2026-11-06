@@ -77,10 +77,10 @@ const ROWS = [
   ],
 ];
 
-async function xlsx(rows) {
+async function xlsx(rows, headers = HEADERS) {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("Leads");
-  ws.addRow(HEADERS);
+  ws.addRow(headers);
   rows.forEach((r) => ws.addRow(r));
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
@@ -170,22 +170,29 @@ describe("lead tracker import / export", () => {
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(res.body);
     const ws = wb.worksheets[0];
-    expect(ws.getRow(1).values.slice(1)).toEqual(HEADERS);
+    const EXPORT_HEADERS = [
+      ...HEADERS.slice(0, 3),
+      "CC Mail",
+      ...HEADERS.slice(3),
+    ];
+    expect(ws.getRow(1).values.slice(1)).toEqual(EXPORT_HEADERS);
     const rows = [];
     ws.eachRow((row, i) => i > 1 && rows.push(row.values.slice(1)));
     const alpha = rows.find((r) => r[1] === "Alpha BioTech");
-    expect(alpha.slice(0, 6)).toEqual([
+    expect(alpha.slice(0, 3)).toEqual([
       "REP-101",
       "Alpha BioTech",
       "procurement@alphabiotech.com",
+    ]);
+    expect(alpha.slice(4, 7)).toEqual([
       "+1 (555) 234-8901",
       "Not Responding",
       "Not Called",
     ]);
-    expect(alpha.slice(9)).toEqual(["1,200", "2,800", 15400]);
+    expect(alpha.slice(10)).toEqual(["1,200", "2,800", 15400]);
     const tpl = await ctx.api().get("/api/v1/leads/import-template?format=csv");
     expect(tpl.text.replace("﻿", "").trim()).toBe(
-      HEADERS.map((h) => (/[",]/.test(h) ? `"${h}"` : h)).join(","),
+      EXPORT_HEADERS.map((h) => (/[",]/.test(h) ? `"${h}"` : h)).join(","),
     );
   });
 });
@@ -298,5 +305,71 @@ describe("statuses, select-all and email audience", () => {
       premiumPriceMinor: "300000",
       dataCount: 1200,
     });
+  });
+
+  it("keeps CC Mail from the form and from imports, and passes it to the email list contacts", async () => {
+    const bad = await ctx
+      .api(rep101.id)
+      .post("/api/v1/leads", {
+        fullName: "Gamma",
+        email: "g@gamma.test",
+        ccEmails: "boss@gamma.test, not-an-email",
+      });
+    expect(bad.status).toBe(422);
+    const r = await ctx
+      .api(rep101.id)
+      .post("/api/v1/leads", {
+        fullName: "Gamma",
+        email: "g@gamma.test",
+        ccEmails: "Boss@Gamma.test; team@gamma.test",
+      });
+    expect(r.status).toBe(201);
+    expect(r.body.data.ccEmails).toEqual([
+      "boss@gamma.test",
+      "team@gamma.test",
+    ]);
+
+    const headers = [
+      "Sales ID",
+      "Client Name",
+      "Client Email",
+      "CC Mail",
+      "Response Status",
+    ];
+    const file = await xlsx(
+      [
+        [
+          "REP-101",
+          "Delta Corp",
+          "buyer@delta.test",
+          "ceo@delta.test, ops@delta.test",
+          "Not Responding",
+        ],
+        ["REP-101", "Eps Ltd", "x@eps.test", "wrong-cc", "Not Responding"],
+      ],
+      headers,
+    );
+    const imp = await ctx.api().upload("/api/v1/leads/import", "cc.xlsx", file);
+    expect(imp.body.data).toMatchObject({ createdCount: 1, errorCount: 1 });
+    expect(imp.body.data.errors[0].message).toMatch(/Invalid CC Mail/);
+    const delta = await prisma.lead.findFirst({
+      where: { emailNormalized: "buyer@delta.test" },
+    });
+    expect(delta.ccEmails).toEqual(["ceo@delta.test", "ops@delta.test"]);
+
+    const aud = await ctx
+      .api(rep101.id)
+      .post("/api/v1/leads/email-audience", {
+        ids: [delta.id],
+        listName: "Delta",
+      });
+    const contact = await prisma.contact.findFirst({
+      where: {
+        ownerWorkspaceId: rep101.id,
+        emailNormalized: "buyer@delta.test",
+      },
+    });
+    expect(aud.status).toBe(200);
+    expect(contact.ccEmails).toEqual(["ceo@delta.test", "ops@delta.test"]);
   });
 });
