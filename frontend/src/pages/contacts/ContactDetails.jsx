@@ -79,6 +79,7 @@ export default function ContactDetails() {
                   ) : null,
                 ],
                 ["CC Mail", c.ccEmails?.length ? c.ccEmails.join(", ") : null],
+                ["Subject line", c.subjectLine],
                 ["Phone", c.phoneE164 ?? c.phoneRaw],
                 [
                   "Company",

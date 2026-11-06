@@ -19,6 +19,7 @@ export default function ContactForm({
     lastName: contact?.lastName ?? "",
     email: contact?.email ?? "",
     ccEmails: (contact?.ccEmails ?? []).join(", "),
+    subjectLine: contact?.subjectLine ?? "",
     phone: contact?.phoneRaw ?? "",
     companyId: contact?.companyId ?? defaults.companyId ?? null,
     designation: contact?.designation ?? "",
@@ -102,6 +103,12 @@ export default function ContactForm({
             label: "CC Mail",
             placeholder: "e.g. manager@client.com, team@client.com",
             hint: "Copied on campaign emails to this client. Separate several with commas (max 5).",
+          },
+          {
+            name: "subjectLine",
+            label: "Subject line",
+            placeholder: "e.g. PMAWM 2026 Updated Email List",
+            hint: 'Follow-up campaigns can reuse it, e.g. "Follow up - " + this subject.',
           },
           { name: "designation", label: "Designation" },
           {

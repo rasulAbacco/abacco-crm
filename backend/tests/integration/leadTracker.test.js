@@ -173,6 +173,7 @@ describe("lead tracker import / export", () => {
     const EXPORT_HEADERS = [
       ...HEADERS.slice(0, 3),
       "CC Mail",
+      "Subject Line",
       ...HEADERS.slice(3),
     ];
     expect(ws.getRow(1).values.slice(1)).toEqual(EXPORT_HEADERS);
@@ -184,12 +185,12 @@ describe("lead tracker import / export", () => {
       "Alpha BioTech",
       "procurement@alphabiotech.com",
     ]);
-    expect(alpha.slice(4, 7)).toEqual([
+    expect(alpha.slice(5, 8)).toEqual([
       "+1 (555) 234-8901",
       "Not Responding",
       "Not Called",
     ]);
-    expect(alpha.slice(10)).toEqual(["1,200", "2,800", 15400]);
+    expect(alpha.slice(11)).toEqual(["1,200", "2,800", 15400]);
     const tpl = await ctx.api().get("/api/v1/leads/import-template?format=csv");
     expect(tpl.text.replace("﻿", "").trim()).toBe(
       EXPORT_HEADERS.map((h) => (/[",]/.test(h) ? `"${h}"` : h)).join(","),
@@ -334,6 +335,7 @@ describe("statuses, select-all and email audience", () => {
       "Client Name",
       "Client Email",
       "CC Mail",
+      "Subject Line",
       "Response Status",
     ];
     const file = await xlsx(
@@ -343,9 +345,10 @@ describe("statuses, select-all and email audience", () => {
           "Delta Corp",
           "buyer@delta.test",
           "ceo@delta.test, ops@delta.test",
+          "PMAWM 2026 Updated Email List",
           "Not Responding",
         ],
-        ["REP-101", "Eps Ltd", "x@eps.test", "wrong-cc", "Not Responding"],
+        ["REP-101", "Eps Ltd", "x@eps.test", "wrong-cc", "", "Not Responding"],
       ],
       headers,
     );
@@ -356,6 +359,7 @@ describe("statuses, select-all and email audience", () => {
       where: { emailNormalized: "buyer@delta.test" },
     });
     expect(delta.ccEmails).toEqual(["ceo@delta.test", "ops@delta.test"]);
+    expect(delta.subjectLine).toBe("PMAWM 2026 Updated Email List");
 
     const aud = await ctx
       .api(rep101.id)
@@ -371,5 +375,12 @@ describe("statuses, select-all and email audience", () => {
     });
     expect(aud.status).toBe(200);
     expect(contact.ccEmails).toEqual(["ceo@delta.test", "ops@delta.test"]);
+    expect(contact.subjectLine).toBe("PMAWM 2026 Updated Email List");
+    const form = await ctx
+      .api(rep101.id)
+      .put(`/api/v1/leads/${delta.id}`, {
+        subjectLine: "ASCO 2026 Attendee List",
+      });
+    expect(form.body.data.subjectLine).toBe("ASCO 2026 Attendee List");
   });
 });

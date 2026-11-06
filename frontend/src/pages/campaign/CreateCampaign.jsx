@@ -9,6 +9,7 @@ import {
 import { FiArrowLeft, FiCheck, FiSend, FiSave } from "react-icons/fi";
 import { campaignService } from "./services/campaignService";
 import SenderPicker from "./components/SenderPicker";
+import SubjectField from "./components/SubjectField";
 import api, { errorMessage } from "../../services/axiosInstance";
 import { useSalesIdStore } from "../../store/salesIdStore";
 import { useAuthStore } from "../../store/authStore";
@@ -581,12 +582,11 @@ export default function CreateCampaign() {
                 options={templates.map((t) => [t.id, t.name])}
                 placeholder="Blank"
               />
-              <TextInput
-                label="Subject"
-                required
+              <SubjectField
+                key={c.id ?? "new"}
                 value={c.subject}
-                onChange={(e) => set({ subject: e.target.value })}
-                placeholder="e.g. {{firstName|Hello}}, a quick idea for {{company}}"
+                onChange={(subject) => set({ subject })}
+                preferOwn={!!search.get("listId")}
               />
               <TextInput
                 label="Preheader (inbox preview text)"

@@ -27,6 +27,7 @@ const fields = {
   ),
   phone: text(40),
   ccEmails: ccEmailsField.optional(),
+  subjectLine: text(300),
   companyId: opt(z.string().uuid()),
   designation: text(120),
   countryCode: opt(countryField),

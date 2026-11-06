@@ -549,6 +549,56 @@ describe("campaign sending", () => {
     expect(inbox[0].raw).toMatch(/From: .*other@abacco\.test/);
   });
 
+  it("follow-ups reuse each lead's own subject line with words added before it", async () => {
+    const smtp = await smtpAccount({ fromEmail: "subj@abacco.test" });
+    const list = await listWith(["s1@subj.test", "s2@subj.test"]);
+    await prisma.contact.updateMany({
+      where: { emailNormalized: "s1@subj.test" },
+      data: { subjectLine: "PMAWM 2026 Updated Email List" },
+    });
+    const c = await campaign(list, smtp, {
+      subject: "Payment follow up - {{subjectLine|Our data offer}}",
+    });
+    await ctx.api(ctx.ws1.id).post(`/api/v1/campaigns/${c.id}/send`);
+    await drain();
+    const subjects = Object.fromEntries(
+      inbox.map((m) => [m.to[0], m.raw.match(/^Subject: (.*)$/m)[1].trim()]),
+    );
+    expect(subjects).toEqual({
+      "s1@subj.test": "Payment follow up - PMAWM 2026 Updated Email List",
+      "s2@subj.test": "Payment follow up - Our data offer",
+    });
+  });
+
+  it("sends without company name / address when none is set — only the unsubscribe link is added", async () => {
+    await ctx
+      .api()
+      .put(`/api/v1/sales-ids/${ctx.ws1.id}`, {
+        senderLegalName: null,
+        senderPostalAddress: null,
+      });
+    const smtp = await smtpAccount({ fromEmail: "nofooter@abacco.test" });
+    const c = await campaign(await listWith(["nf@z.test"]), smtp, {
+      subject: "Follow up - {{subjectLine}}",
+    });
+    const res = await ctx
+      .api(ctx.ws1.id)
+      .post(`/api/v1/campaigns/${c.id}/send`);
+    expect(res.status).toBe(200);
+    await drain();
+    expect(inbox).toHaveLength(1);
+    expect(inbox[0].raw).not.toMatch(/Bengaluru|relationship with/);
+    expect(inbox[0].raw).toMatch(/Unsubscribe/);
+    expect(inbox[0].raw.match(/^Subject: (.*)$/m)[1].trim()).toBe("Follow up"); // no dangling " - "
+    await ctx
+      .api()
+      .put(`/api/v1/sales-ids/${ctx.ws1.id}`, {
+        senderLegalName: "Abacco Technology Pvt Ltd",
+        senderPostalAddress: "1 MG Road, Bengaluru 560001, India",
+      });
+    inbox = [];
+  });
+
   it("copies CC addresses, skipping suppressed ones, and counts them against limits", async () => {
     const smtp = await smtpAccount({ fromEmail: "cc@abacco.test" });
     const list = await listWith(["client@cc.test"]);

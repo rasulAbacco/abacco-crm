@@ -61,6 +61,7 @@ const fields = {
   previousPitch: text(2000),
   followUpPitch: text(2000),
   ccEmails: ccEmailsField.optional(),
+  subjectLine: text(300),
   priceCurrency: opt(currencyField),
   basicPrice: opt(amountField),
   premiumPrice: opt(amountField),

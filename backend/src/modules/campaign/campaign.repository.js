@@ -91,6 +91,7 @@ export async function loadAudience(db, campaign, listIds) {
           email: true,
           emailNormalized: true,
           ccEmails: true,
+          subjectLine: true,
           firstName: true,
           lastName: true,
           designation: true,
@@ -163,6 +164,7 @@ export async function planRecipients(
         company: c.company?.name,
         designation: c.designation,
         city: c.city,
+        subjectLine: c.subjectLine,
       },
       ccEmails:
         campaign.includeCc === false

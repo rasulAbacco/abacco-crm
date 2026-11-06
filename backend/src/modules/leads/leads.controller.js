@@ -34,6 +34,7 @@ export const CLIENT_COLUMNS = [
     header: "CC Mail",
     value: (r) => (r.ccEmails ?? []).join(", "),
   },
+  { key: "subjectLine", header: "Subject Line" },
   {
     key: "phone",
     header: "Phone Number",

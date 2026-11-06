@@ -362,14 +362,6 @@ async function readiness(c) {
     include: { account: true },
   });
   if (ws.status !== "ACTIVE") issues.push(`Sales ID ${ws.code} is not active.`);
-  if (
-    !(ws.senderLegalName ?? ws.account.legalName) ||
-    !(ws.senderPostalAddress ?? ws.account.postalAddress)
-  ) {
-    issues.push(
-      "Add the sender legal name and postal address (Sales ID settings) — anti-spam laws require them in every email.",
-    );
-  }
   const assigned = await eligibleSmtpAccounts(
     prisma,
     c.accountId,
@@ -793,6 +785,23 @@ export async function sendTest(scope, id, { to, smtpAccountId }, ctx) {
     where: { id: c.ownerWorkspaceId },
     include: { account: true },
   });
+  // A real subject line from the audience, so the test shows how follow-up subjects look.
+  const sample = await prisma.contact.findFirst({
+    where: {
+      subjectLine: { not: null },
+      deletedAt: null,
+      listMemberships: {
+        some: {
+          listId: {
+            in: (c.lists ?? [])
+              .map((l) => l.listId ?? l.list?.id ?? l.id)
+              .filter(Boolean),
+          },
+        },
+      },
+    },
+    select: { subjectLine: true },
+  });
   const results = [];
   for (const email of to) {
     const slot = await reserveSlot(smtp, `test:${id}:${email}:${Date.now()}`);
@@ -815,7 +824,11 @@ export async function sendTest(scope, id, { to, smtpAccountId }, ctx) {
       recipient: {
         email,
         trackingToken: "test-preview",
-        mergeData: { firstName: "Test", lastName: "Recipient" },
+        mergeData: {
+          firstName: "Test",
+          lastName: "Recipient",
+          subjectLine: sample?.subjectLine,
+        },
       },
       workspace: ws,
       account: ws.account,

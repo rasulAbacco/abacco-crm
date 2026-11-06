@@ -354,11 +354,16 @@ export async function buildEmailAudience(scope, ids, listName, ctx) {
           },
           select: { id: true },
         });
-        if (c && l.ccEmails?.length)
+        // The lead's CC and subject line follow it onto the contact the campaign sends to.
+        if (c && (l.ccEmails?.length || l.subjectLine)) {
           await tx.contact.update({
             where: { id: c.id },
-            data: { ccEmails: l.ccEmails },
+            data: {
+              ...(l.ccEmails?.length ? { ccEmails: l.ccEmails } : {}),
+              ...(l.subjectLine ? { subjectLine: l.subjectLine } : {}),
+            },
           });
+        }
         if (!c) {
           c = await tx.contact.create({
             data: {
@@ -379,6 +384,7 @@ export async function buildEmailAudience(scope, ids, listName, ctx) {
               locale: l.locale,
               source: "Lead",
               ccEmails: l.ccEmails ?? [],
+              subjectLine: l.subjectLine ?? null,
             },
             select: { id: true },
           });
@@ -799,6 +805,14 @@ export async function importLeads(scope, file, opts, ctx) {
       premiumPriceMinor,
       dataCount,
       ccEmails: cc.emails.filter((e) => e !== emailNormalized),
+      subjectLine:
+        pick(
+          r,
+          "subjectline",
+          "subject",
+          "emailsubject",
+          "emailsubjectline",
+        )?.slice(0, 300) ?? null,
     };
     data.score = computeScore(data);
     perSalesId[ws.code] ??= { created: 0, updated: 0, skipped: 0 };

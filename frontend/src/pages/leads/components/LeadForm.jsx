@@ -18,6 +18,7 @@ export const toLeadForm = (l = {}) => ({
   lastName: l.lastName ?? "",
   email: l.email ?? "",
   ccEmails: (l.ccEmails ?? []).join(", "),
+  subjectLine: l.subjectLine ?? "",
   phone: l.phoneRaw ?? "",
   companyName: l.companyName ?? "",
   companyId: l.companyId ?? null,
@@ -136,7 +137,12 @@ export default function LeadForm({
               placeholder: "e.g. manager@client.com, team@client.com",
               hint: "Copied on campaign emails to this client. Separate several with commas (max 5).",
             },
-            { name: "_ccspacer", render: () => null },
+            {
+              name: "subjectLine",
+              label: "Subject line",
+              placeholder: "e.g. PMAWM 2026 Updated Email List",
+              hint: 'Follow-up campaigns can reuse it, e.g. "Follow up - " + this subject.',
+            },
             { name: "designation", label: "Designation" },
             { name: "companyName", label: "Company name" },
             {

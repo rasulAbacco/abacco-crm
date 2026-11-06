@@ -157,12 +157,6 @@ export default function SalesIdDetails() {
           it automatically.
         </Alert>
       )}
-      {(!w.senderLegalName || !w.senderPostalAddress) && (
-        <Alert>
-          Add the sender legal name and postal address (Edit) before sending
-          campaigns from this Sales ID.
-        </Alert>
-      )}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
         <StatCard label="Leads" value={s.leads} />
         <StatCard label="Contacts" value={s.contacts} />
@@ -197,8 +191,8 @@ export default function SalesIdDetails() {
               ["Default timezone", w.defaultTimezone ?? "Account default"],
               ["Main email", w.primarySmtp?.fromEmail ?? "Not set"],
               ["Alternate email", w.alternateSmtp?.fromEmail ?? "Not set"],
-              ["Sender legal name", w.senderLegalName],
-              ["Sender postal address", w.senderPostalAddress],
+              ["Footer company name", w.senderLegalName ?? "Not shown"],
+              ["Footer address", w.senderPostalAddress ?? "Not shown"],
               ["Created", formatDateTime(w.createdAt)],
             ]}
           />

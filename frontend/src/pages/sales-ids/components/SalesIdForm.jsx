@@ -144,17 +144,17 @@ export default function SalesIdForm({ open, onClose, item, onSaved }) {
           },
           {
             name: "senderLegalName",
-            label: "Sender legal name (email footer)",
-            hint: "Required before sending campaigns",
+            label: "Company name in email footer (optional)",
+            hint: "Leave empty if your pitch already has your company details — nothing is added then.",
             span: 2,
           },
           {
             name: "senderPostalAddress",
-            label: "Sender postal address (email footer)",
+            label: "Company address in email footer (optional)",
             type: "textarea",
             rows: 2,
             span: 2,
-            hint: "CAN-SPAM, GDPR/PECR, CASL and others require a physical address",
+            hint: "Shown under each email only if filled in. Many anti-spam laws (e.g. US CAN-SPAM) expect a postal address somewhere in the email — your pitch can carry it instead.",
           },
         ]}
       />
