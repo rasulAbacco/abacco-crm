@@ -1,5 +1,5 @@
 // Builds the final email for one recipient: personalisation, tracking links,
-// open pixel, compliance footer and List-Unsubscribe headers (RFC 8058).
+// open pixel and the optional company footer.
 import sanitizeHtml from "sanitize-html";
 import { convert } from "html-to-text";
 import crypto from "node:crypto";
@@ -135,9 +135,11 @@ export function mergeVars(recipient, { workspace, campaign }) {
   };
 }
 
-// Company name / address are optional (many teams put them in the pitch itself):
-// a line appears only when it is filled in. The unsubscribe link is always added.
-function footer({ workspace, account, unsubscribeUrl }) {
+// Nothing is added under the pitch unless a company name / address is set on the Sales ID.
+// No unsubscribe link or List-Unsubscribe header is added (owner's choice); opt-outs are
+// handled by replies and added to suppressions by hand. {{unsubscribeUrl}} still works if
+// a pitch includes it on purpose.
+function footer({ workspace, account }) {
   const legal = (workspace.senderLegalName ?? account.legalName ?? "").trim();
   const address = (
     workspace.senderPostalAddress ??
@@ -148,13 +150,10 @@ function footer({ workspace, account, unsubscribeUrl }) {
     legal && escapeHtml(legal),
     address && escapeHtml(address).replace(/\n/g, "<br>"),
   ].filter(Boolean);
+  if (!lines.length) return { html: "", text: "" };
   return {
-    html: `<div style="margin-top:32px;padding-top:16px;border-top:1px solid #e5e7eb;font-family:Arial,sans-serif;font-size:12px;line-height:18px;color:#6b7280;text-align:center">
-${lines.map((l) => `${l}<br>`).join("")}<a href="${unsubscribeUrl}" style="color:#6b7280;text-decoration:underline">Unsubscribe</a></div>`,
-    text: `\n\n--\n${[legal, address]
-      .filter(Boolean)
-      .map((l) => `${l}\n`)
-      .join("")}Unsubscribe: ${unsubscribeUrl}`,
+    html: `<div style="margin-top:32px;padding-top:16px;border-top:1px solid #e5e7eb;font-family:Arial,sans-serif;font-size:12px;line-height:18px;color:#6b7280;text-align:center">${lines.join("<br>")}</div>`,
+    text: `\n\n--\n${[legal, address].filter(Boolean).join("\n")}`,
   };
 }
 
@@ -194,7 +193,7 @@ export function buildMessage({
       },
     );
   }
-  const f = footer({ workspace, account, unsubscribeUrl: vars.unsubscribeUrl });
+  const f = footer({ workspace, account });
   const pixel = campaign.trackOpens
     ? `<img src="${base}/t/o/${recipient.trackingToken}.gif" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0">`
     : "";
@@ -219,8 +218,6 @@ export function buildMessage({
     text,
     messageId,
     headers: {
-      "List-Unsubscribe": `<${vars.unsubscribeUrl}>`,
-      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
       "X-Abacco-Recipient": recipient.trackingToken,
     },
   };

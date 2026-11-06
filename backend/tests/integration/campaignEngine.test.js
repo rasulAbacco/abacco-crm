@@ -246,7 +246,7 @@ describe("campaign sending", () => {
     expect(inbox).toHaveLength(2);
     const ana = inbox.find((m) => m.to.includes("ana@x.test")).raw;
     expect(ana).toMatch(/Subject: Hello ana/);
-    expect(ana).toMatch(/List-Unsubscribe-Post: List-Unsubscribe=One-Click/);
+    expect(ana).not.toMatch(/List-Unsubscribe/);
     expect(ana).toContain("Abacco Technology Pvt Ltd");
     expect(ana).toMatch(/\/t\/c\//); // link tracked
     expect(
@@ -570,7 +570,7 @@ describe("campaign sending", () => {
     });
   });
 
-  it("sends without company name / address when none is set — only the unsubscribe link is added", async () => {
+  it("adds nothing under the pitch when no company name / address is set (no visible unsubscribe link)", async () => {
     await ctx
       .api()
       .put(`/api/v1/sales-ids/${ctx.ws1.id}`, {
@@ -588,7 +588,9 @@ describe("campaign sending", () => {
     await drain();
     expect(inbox).toHaveLength(1);
     expect(inbox[0].raw).not.toMatch(/Bengaluru|relationship with/);
-    expect(inbox[0].raw).toMatch(/Unsubscribe/);
+    expect(inbox[0].raw).not.toMatch(/>Unsubscribe<|Unsubscribe: http/);
+    expect(inbox[0].raw).not.toMatch(/^List-Unsubscribe/m);
+    expect(inbox[0].raw).not.toMatch(/border-top:1px solid #e5e7eb/);
     expect(inbox[0].raw.match(/^Subject: (.*)$/m)[1].trim()).toBe("Follow up"); // no dangling " - "
     await ctx
       .api()

@@ -451,8 +451,8 @@ export default function AutomationBuilder() {
           )}
           <p className="text-xs text-ink-500">
             Emails skip unsubscribed or suppressed people and people without
-            required consent; each includes an unsubscribe link (and your
-            company name/address if set on the Sales ID).
+            required consent; nothing is added under your text except your
+            company name/address if set on the Sales ID.
           </p>
         </div>
       </Card>
