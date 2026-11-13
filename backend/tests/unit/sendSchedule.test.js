@@ -80,7 +80,14 @@ describe("lead currency", () => {
     }
     expect(parseLeadCurrency("")).toBe(null);
     expect(parseLeadCurrency("$")).toBe(undefined);
-    expect(parseLeadCurrency("INR")).toBe(undefined);
+    expect(parseLeadCurrency("XYZ")).toBe(undefined);
+    // Every ISO currency works, by code, English name or symbol.
+    expect(parseLeadCurrency("inr")).toBe("INR");
+    expect(parseLeadCurrency("₹")).toBe("INR");
+    expect(parseLeadCurrency("Indian Rupee")).toBe("INR");
+    expect(parseLeadCurrency("£")).toBe("GBP");
+    expect(parseLeadCurrency("Japanese Yen")).toBe("JPY");
+    expect(parseLeadCurrency("kwd")).toBe("KWD");
   });
 
   it("reads currency hints in price cells", () => {
@@ -101,9 +108,15 @@ describe("lead currency", () => {
       resolveRowCurrency({ prices: ["900"], importDefault: "CAD" }),
     ).toEqual({ currency: "CAD" });
     expect(resolveRowCurrency({ prices: [], importDefault: "INR" })).toEqual({
+      currency: "INR",
+    });
+    expect(resolveRowCurrency({ prices: [], importDefault: "XYZ" })).toEqual({
       currency: "USD",
     });
-    expect(resolveRowCurrency({ column: "INR" }).error).toBeTruthy();
+    expect(resolveRowCurrency({ prices: ["₹50,000"] })).toEqual({
+      currency: "INR",
+    });
+    expect(resolveRowCurrency({ column: "XYZ" }).error).toBeTruthy();
     expect(resolveRowCurrency({ prices: ["A$5", "€6"] }).error).toBeTruthy();
   });
 });

@@ -807,6 +807,54 @@ describe("exact sending speed (pacing)", () => {
   });
 });
 
+describe("deleting campaigns", () => {
+  it("deletes a draft, but refuses a campaign that is sending", async () => {
+    const smtp = await smtpAccount({ fromEmail: "del@abacco.test" });
+    const list = await listWith(["d1@del.test"]);
+    const draft = await campaign(list, smtp);
+    const del = await ctx
+      .api(ctx.ws1.id)
+      .delete(`/api/v1/campaigns/${draft.id}`);
+    expect(del.status).toBe(200);
+    expect(
+      (await ctx.api(ctx.ws1.id).get(`/api/v1/campaigns/${draft.id}`)).status,
+    ).toBe(404);
+    const listed = await ctx
+      .api(ctx.ws1.id)
+      .get("/api/v1/campaigns?status=DRAFT");
+    expect(listed.body.data.map((c) => c.id)).not.toContain(draft.id);
+
+    const live = await campaign(await listWith(["d2@del.test"]), smtp);
+    await ctx.api(ctx.ws1.id).post(`/api/v1/campaigns/${live.id}/send`);
+    const refused = await ctx
+      .api(ctx.ws1.id)
+      .delete(`/api/v1/campaigns/${live.id}`);
+    expect(refused.status).toBe(409);
+  });
+
+  it("shows each sender's speed to the campaign screens", async () => {
+    const smtp = await smtpAccount({
+      fromEmail: "speed-view@abacco.test",
+      hourlyLimit: 30,
+      pacingEnabled: true,
+    });
+    const c = await campaign(await listWith(["v1@view.test"]), smtp);
+    const got = await ctx.api(ctx.ws1.id).get(`/api/v1/campaigns/${c.id}`);
+    expect(got.body.data.smtpAccounts[0]).toMatchObject({
+      hourlyLimit: 30,
+      dailyLimit: 1000,
+      pacingEnabled: true,
+    });
+    const eligible = await ctx
+      .api(ctx.ws1.id)
+      .get(`/api/v1/campaigns/eligible-smtp?workspaceId=${ctx.ws1.id}`);
+    expect(eligible.body.data.find((a) => a.id === smtp.id)).toMatchObject({
+      hourlyLimit: 30,
+      pacingEnabled: true,
+    });
+  });
+});
+
 describe("scheduling across time zones", () => {
   const now = new Date("2026-11-04T10:00:00Z"); // 15:30 in India
   const camp = {

@@ -6,9 +6,10 @@ import {
   Link,
   useSearchParams,
 } from "react-router-dom";
-import { FiArrowLeft, FiCheck, FiSend, FiSave } from "react-icons/fi";
+import { FiArrowLeft, FiCheck, FiSend, FiSave, FiTrash2 } from "react-icons/fi";
 import { campaignService } from "./services/campaignService";
 import SenderPicker from "./components/SenderPicker";
+import SendingSpeedControl from "./components/SendingSpeedControl";
 import SubjectField from "./components/SubjectField";
 import api, { errorMessage } from "../../services/axiosInstance";
 import { useSalesIdStore } from "../../store/salesIdStore";
@@ -23,6 +24,7 @@ import {
   Spinner,
   Badge,
   Modal,
+  ConfirmDialog,
 } from "../../components/common/ui";
 import {
   TextInput,
@@ -138,6 +140,7 @@ export default function CreateCampaign() {
   const [testOpen, setTestOpen] = useState(false);
   const [testTo, setTestTo] = useState("");
   const [segCountry, setSegCountry] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const set = (patch) => setC((x) => ({ ...x, ...patch }));
 
   useEffect(() => {
@@ -272,6 +275,25 @@ export default function CreateCampaign() {
       setBusy(false);
     }
   };
+  const deleteDraft = async () => {
+    setBusy(true);
+    try {
+      await api.delete(`/campaigns/${campaignId}`, {
+        headers: { "X-Sales-Id": c.ownerWorkspaceId },
+      });
+      toast("Draft deleted");
+      navigate("/campaigns");
+    } catch (err) {
+      toast(errorMessage(err), "error");
+      setBusy(false);
+      setConfirmDelete(false);
+    }
+  };
+  const sender = smtp.find((a) => a.id === c.smtpAccountIds[0]);
+  const updateSender = (saved) =>
+    setSmtp((list) =>
+      list.map((a) => (a.id === saved.id ? { ...a, ...saved } : a)),
+    );
   const sendTest = async () => {
     const cid = await saveDraft(true);
     if (!cid) return;
@@ -333,6 +355,15 @@ export default function CreateCampaign() {
             >
               <FiSave /> Save draft
             </button>
+            {campaignId && (
+              <button
+                className="btn-secondary text-red-700"
+                disabled={busy}
+                onClick={() => setConfirmDelete(true)}
+              >
+                <FiTrash2 /> Delete draft
+              </button>
+            )}
           </>
         }
       />
@@ -717,6 +748,11 @@ export default function CreateCampaign() {
               ) : (
                 <Alert tone="green">Ready to send.</Alert>
               )}
+              <SendingSpeedControl
+                account={sender}
+                count={preview.summary.sendable}
+                onSaved={updateSender}
+              />
               <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                 <div className="rounded-lg border border-ink-200 p-3">
                   <p className="text-xs text-ink-500">
@@ -826,6 +862,15 @@ export default function CreateCampaign() {
           )}
         </div>
       </Card>
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete this draft?"
+        message="The draft is removed from your campaigns. Nothing has been sent from it."
+        confirmLabel="Delete draft"
+        busy={busy}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={deleteDraft}
+      />
       <Modal
         open={testOpen}
         onClose={() => setTestOpen(false)}

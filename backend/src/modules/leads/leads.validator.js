@@ -63,7 +63,7 @@ const fields = {
   followUpPitch: text(2000),
   ccEmails: ccEmailsField.optional(),
   subjectLine: text(300),
-  priceCurrency: opt(leadCurrencyField), // USD, AUD, CAD or EUR
+  priceCurrency: opt(leadCurrencyField), // any ISO currency (USD, AUD, CAD, EUR first in the form)
   basicPrice: opt(amountField),
   premiumPrice: opt(amountField),
   dataCount: opt(z.coerce.number().int().min(0).max(2_000_000_000)),

@@ -202,7 +202,7 @@ describe("lead tracker import / export", () => {
   });
 });
 
-describe("lead currency (USD, AUD, CAD, EUR)", () => {
+describe("lead currency (any ISO currency)", () => {
   it("reads a Currency column per row, price symbols, and the import default", async () => {
     const headers = [
       "Sales ID",
@@ -217,7 +217,10 @@ describe("lead currency (USD, AUD, CAD, EUR)", () => {
       ["REP-101", "Euro Co", "e@cur.test", "900", "", "€"],
       ["REP-101", "Maple Co", "m@cur.test", "C$700", "", ""],
       ["REP-101", "Plain Co", "p@cur.test", "500", "", ""],
-      ["REP-101", "Rupee Co", "r@cur.test", "500", "", "INR"],
+      ["REP-101", "Rupee Co", "r@cur.test", "50,000", "", "INR"],
+      ["REP-101", "Pound Co", "g@cur.test", "£900", "", ""],
+      ["REP-101", "Yen Co", "y@cur.test", "150000", "", "Japanese Yen"],
+      ["REP-101", "Typo Co", "t@cur.test", "500", "", "XYZ"],
     ];
     const res = await ctx
       .api()
@@ -227,11 +230,9 @@ describe("lead currency (USD, AUD, CAD, EUR)", () => {
         await xlsx(rows, headers),
       );
     expect(res.status).toBe(200);
-    expect(res.body.data).toMatchObject({ createdCount: 4, errorCount: 1 });
-    expect(res.body.data.errors[0]).toMatchObject({ line: 6 });
-    expect(res.body.data.errors[0].message).toMatch(
-      /INR.*USD, AUD, CAD or EUR/,
-    );
+    expect(res.body.data).toMatchObject({ createdCount: 7, errorCount: 1 });
+    expect(res.body.data.errors[0]).toMatchObject({ line: 9 });
+    expect(res.body.data.errors[0].message).toMatch(/"XYZ" is not recognised/);
     const by = async (email) =>
       prisma.lead.findFirst({ where: { emailNormalized: email } });
     expect(await by("a@cur.test")).toMatchObject({
@@ -242,9 +243,18 @@ describe("lead currency (USD, AUD, CAD, EUR)", () => {
     expect((await by("e@cur.test")).priceCurrency).toBe("EUR");
     expect((await by("m@cur.test")).priceCurrency).toBe("CAD");
     expect((await by("p@cur.test")).priceCurrency).toBe("EUR"); // import default
+    expect(await by("r@cur.test")).toMatchObject({
+      priceCurrency: "INR",
+      basicPriceMinor: 5000000n,
+    });
+    expect((await by("g@cur.test")).priceCurrency).toBe("GBP");
+    expect(await by("y@cur.test")).toMatchObject({
+      priceCurrency: "JPY",
+      basicPriceMinor: 150000n,
+    }); // yen has no decimals
   });
 
-  it("accepts only the four currencies in the lead form", async () => {
+  it("accepts any real currency code in the lead form", async () => {
     const ok = await ctx
       .api(rep101.id)
       .post("/api/v1/leads", {
@@ -255,13 +265,22 @@ describe("lead currency (USD, AUD, CAD, EUR)", () => {
       });
     expect(ok.status).toBe(201);
     expect(ok.body.data.priceCurrency).toBe("CAD");
+    const inr = await ctx
+      .api(rep101.id)
+      .post("/api/v1/leads", {
+        firstName: "Cur",
+        email: "form3@cur.test",
+        basicPrice: "100",
+        priceCurrency: "INR",
+      });
+    expect(inr.status).toBe(201);
     const bad = await ctx
       .api(rep101.id)
       .post("/api/v1/leads", {
         firstName: "Cur",
         email: "form2@cur.test",
         basicPrice: "100",
-        priceCurrency: "INR",
+        priceCurrency: "XYZ",
       });
     expect(bad.status).toBe(422);
   });

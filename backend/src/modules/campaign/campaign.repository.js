@@ -36,6 +36,9 @@ export async function eligibleSmtpAccounts(db, accountId, workspaceId) {
       health: true,
       hourlyLimit: true,
       dailyLimit: true,
+      pacingEnabled: true,
+      sendWindowStart: true,
+      sendWindowEnd: true,
       unhealthyUntil: true,
       workspaces: {
         select: {

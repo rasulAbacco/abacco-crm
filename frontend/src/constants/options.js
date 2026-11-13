@@ -21,13 +21,6 @@ export const LEAD_SOURCES = [
   "Import",
   "Other",
 ];
-// Lead package prices are quoted in these four only (form dropdown, import Currency column).
-export const LEAD_CURRENCIES = [
-  ["USD", "USD – US Dollar"],
-  ["AUD", "AUD – Australian Dollar"],
-  ["CAD", "CAD – Canadian Dollar"],
-  ["EUR", "EUR – Euro"],
-];
 export const CURRENCIES = [
   "INR",
   "USD",
@@ -152,3 +145,23 @@ export const STATUS_COLORS = {
   READ: "gray",
   COLLABORATE: "indigo",
 };
+
+// Lead package prices: every ISO currency, with the four most used first.
+// Shown as "INR – Indian Rupee". Falls back to CURRENCIES on very old browsers.
+export const PINNED_LEAD_CURRENCIES = ["USD", "AUD", "CAD", "EUR"];
+export const LEAD_CURRENCIES = (() => {
+  let all = CURRENCIES;
+  let name = (c) => c;
+  try {
+    all = Intl.supportedValuesOf("currency");
+    const dn = new Intl.DisplayNames(["en"], { type: "currency" });
+    name = (c) => dn.of(c) ?? c;
+  } catch {
+    /* older browser: short list */
+  }
+  const rest = all.filter((c) => !PINNED_LEAD_CURRENCIES.includes(c));
+  return [...PINNED_LEAD_CURRENCIES, ...rest].map((c) => [
+    c,
+    `${c} – ${name(c)}`,
+  ]);
+})();

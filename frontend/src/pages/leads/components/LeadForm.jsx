@@ -39,10 +39,7 @@ export const toLeadForm = (l = {}) => ({
   callNotes: l.callNotes ?? "",
   previousPitch: l.previousPitch ?? "",
   followUpPitch: l.followUpPitch ?? "",
-  // Older leads may carry another currency; the form offers USD, AUD, CAD and EUR only.
-  priceCurrency: ["USD", "AUD", "CAD", "EUR"].includes(l.priceCurrency)
-    ? l.priceCurrency
-    : "USD",
+  priceCurrency: l.priceCurrency ?? "USD",
   basicPrice: minorToInput(l.basicPriceMinor, l.priceCurrency ?? "USD") ?? "",
   premiumPrice:
     minorToInput(l.premiumPriceMinor, l.priceCurrency ?? "USD") ?? "",
