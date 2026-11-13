@@ -12,6 +12,7 @@ import { getRecordAccess, assertCanEdit } from "../../utils/scope.js";
 import { resolveWriteWorkspace } from "../../middleware/salesIdMiddleware.js";
 import { writeAudit } from "../../services/audit/auditService.js";
 import { toMinor } from "../../utils/money.js";
+import { resolveRowCurrency } from "../../utils/leadCurrency.js";
 import { parseUpload, pick } from "../../services/files/tabularService.js";
 import { publish } from "../../services/events/eventBus.js";
 import { buildScopeWhere } from "../../utils/scope.js";
@@ -715,24 +716,31 @@ export async function importLeads(scope, file, opts, ctx) {
     const callStatus = canonical(pick(r, "callstatus"), options.callStatuses);
     let basicPriceMinor = null;
     let premiumPriceMinor = null;
+    // Currency per row: the "Currency" column (USD, AUD, CAD, EUR; also A$, C$, €, "Euro"…),
+    // else a symbol in the price cells (A$1,200), else the import's default currency.
+    const currencyCell = pick(
+      r,
+      "currency",
+      "pricecurrency",
+      "packagecurrency",
+      "curr",
+    );
+    const b = pick(r, "basicpackageprice", "basicprice", "basicpackage");
+    const p = pick(r, "premiumpackageprice", "premiumprice", "premiumpackage");
+    const cur = resolveRowCurrency({
+      column: currencyCell,
+      prices: [b, p],
+      importDefault: opts.priceCurrency,
+    });
+    if (cur.error) {
+      errors.push({ line, message: cur.error });
+      continue;
+    }
+    const rowCurrency = cur.currency;
     try {
-      const b = pick(r, "basicpackageprice", "basicprice", "basicpackage");
-      const p = pick(
-        r,
-        "premiumpackageprice",
-        "premiumprice",
-        "premiumpackage",
-      );
-      if (b)
-        basicPriceMinor = toMinor(
-          b.replace(/[^\d.,]/g, ""),
-          opts.priceCurrency,
-        );
+      if (b) basicPriceMinor = toMinor(b.replace(/[^\d.,]/g, ""), rowCurrency);
       if (p)
-        premiumPriceMinor = toMinor(
-          p.replace(/[^\d.,]/g, ""),
-          opts.priceCurrency,
-        );
+        premiumPriceMinor = toMinor(p.replace(/[^\d.,]/g, ""), rowCurrency);
     } catch (err) {
       errors.push({ line, message: `Price: ${err.message}` });
       continue;
@@ -798,8 +806,8 @@ export async function importLeads(scope, file, opts, ctx) {
       previousPitch: pick(r, "previouspitch") ?? null,
       followUpPitch: pick(r, "followuppitch", "pitch") ?? null,
       priceCurrency:
-        basicPriceMinor !== null || premiumPriceMinor !== null
-          ? opts.priceCurrency
+        currencyCell || basicPriceMinor !== null || premiumPriceMinor !== null
+          ? rowCurrency
           : null,
       basicPriceMinor,
       premiumPriceMinor,

@@ -11,6 +11,8 @@
 //  * A campaign sends from the one account the user chose. If that account fails, the campaign
 //    waits (temporary problem) or pauses (sign-in rejected) — it never switches to another address.
 //  * CC addresses count against the sending limits like any recipient and are suppression-checked.
+//  * Paced accounts (the default) send one email per interval: 60/hr = one per minute. The
+//    dispatcher books each email's exact slot (sendPacing.js) and queues it as a delayed job.
 import os from "node:os";
 import prisma from "../../prisma/client.js";
 import logger from "../../config/logger.js";
@@ -33,12 +35,19 @@ import {
   isSuppressed,
 } from "../../services/email/suppressionService.js";
 import { notifyAccount } from "../notifications/notifications.service.js";
+import {
+  bookSendSlot,
+  returnSendSlot,
+  isPaced,
+  PACE_SELECT,
+} from "../../services/email/sendPacing.js";
 
 const WORKER_ID = `${os.hostname()}:${process.pid}`;
 const MAX_ATTEMPTS = 5;
 const STALE_SENDING_MS = 10 * 60 * 1000;
 const STALE_QUEUED_MS = 15 * 60 * 1000;
 const BATCH = 500;
+const MAX_PACED_PER_TICK = 200; // safety cap; at 3600/hr a 20 s lookahead needs ~20
 
 const backoff = (attempts) =>
   new Date(Date.now() + Math.min(60, 2 ** attempts) * 60 * 1000); // 2,4,8,16,32,60 min
@@ -104,29 +113,31 @@ export async function dispatchTick({
   // 4) Queue due recipients of sending campaigns (PENDING → QUEUED atomically, then add jobs).
   const sending = await prisma.campaign.findMany({
     where: { status: "SENDING", deletedAt: null },
-    select: { id: true, accountId: true, name: true },
+    select: {
+      id: true,
+      accountId: true,
+      name: true,
+      smtpAccounts: { select: { smtpAccount: { select: PACE_SELECT } } },
+    },
   });
   for (const c of sending) {
-    const rows = await prisma.$queryRaw`
-      UPDATE campaign_recipients SET status = 'QUEUED', "queuedAt" = ${now}, "updatedAt" = ${now}
-      WHERE id IN (
-        SELECT id FROM campaign_recipients
-        WHERE "campaignId" = ${c.id}::uuid AND status = 'PENDING'
-          AND "scheduledAtUtc" <= ${now} AND ("nextAttemptAt" IS NULL OR "nextAttemptAt" <= ${now})
-        ORDER BY "scheduledAtUtc" LIMIT ${BATCH}
-        FOR UPDATE SKIP LOCKED)
-      RETURNING id, attempts, "queuedAt"`;
-    if (rows.length) {
-      try {
-        await enqueue(rows);
-        summary.queued += rows.length;
-      } catch (err) {
-        // Redis down: put them back so nothing is stranded.
-        await prisma.campaignRecipient.updateMany({
-          where: { id: { in: rows.map((r) => r.id) }, status: "QUEUED" },
-          data: { status: "PENDING" },
-        });
-        throw err;
+    // One sender per campaign: if it is paced, each email gets its own exact send slot.
+    const senders = c.smtpAccounts.map((s) => s.smtpAccount);
+    const paced =
+      senders.length === 1 && isPaced(senders[0]) ? senders[0] : null;
+    if (paced) {
+      summary.queued += await queuePaced(c, paced, { enqueue, now });
+    } else {
+      const rows = await claimDue(c.id, now, BATCH, now);
+      if (rows.length) {
+        try {
+          await enqueue(rows);
+          summary.queued += rows.length;
+        } catch (err) {
+          // Redis down: put them back so nothing is stranded.
+          await unqueue(rows);
+          throw err;
+        }
       }
     }
 
@@ -168,6 +179,52 @@ export async function dispatchTick({
     }
   }
   return summary;
+}
+
+/** PENDING → QUEUED for up to `limit` due recipients (queuedAt = when the email is meant to go). */
+function claimDue(campaignId, now, limit, queuedAt) {
+  return prisma.$queryRaw`
+    UPDATE campaign_recipients SET status = 'QUEUED', "queuedAt" = ${queuedAt}, "updatedAt" = ${now}
+    WHERE id IN (
+      SELECT id FROM campaign_recipients
+      WHERE "campaignId" = ${campaignId}::uuid AND status = 'PENDING'
+        AND "scheduledAtUtc" <= ${now} AND ("nextAttemptAt" IS NULL OR "nextAttemptAt" <= ${now})
+      ORDER BY "scheduledAtUtc" LIMIT ${limit}
+      FOR UPDATE SKIP LOCKED)
+    RETURNING id, attempts, "queuedAt"`;
+}
+
+async function unqueue(rows) {
+  await prisma.campaignRecipient.updateMany({
+    where: { id: { in: rows.map((r) => r.id) }, status: "QUEUED" },
+    data: { status: "PENDING" },
+  });
+}
+
+/**
+ * Paced sender: books the account's next slot, queues ONE due recipient for it as a job
+ * delayed until that exact moment, and repeats while slots fall inside the lookahead.
+ */
+async function queuePaced(c, account, { enqueue, now }) {
+  let queued = 0;
+  for (let i = 0; i < MAX_PACED_PER_TICK; i++) {
+    const slot = await bookSendSlot(account, { now: now.getTime() });
+    if (!slot.ok) break;
+    const rows = await claimDue(c.id, now, 1, new Date(slot.slotAt));
+    if (!rows.length) {
+      await returnSendSlot(account.id, slot.slotAt, slot.bookedNext);
+      break;
+    }
+    try {
+      await enqueue(rows, { delayMs: slot.slotAt - Date.now() });
+    } catch (err) {
+      await unqueue(rows);
+      await returnSendSlot(account.id, slot.slotAt, slot.bookedNext);
+      throw err;
+    }
+    queued++;
+  }
+  return queued;
 }
 
 // ------------------------------------------------------------------ sender

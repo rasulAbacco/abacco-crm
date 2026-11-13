@@ -6,6 +6,7 @@ import {
   LEAD_STATUSES,
   PRIORITIES,
   LEAD_SOURCES,
+  LEAD_CURRENCIES,
 } from "../../../constants/options";
 import { errorMessage, fieldErrors } from "../../../services/axiosInstance";
 import { toast } from "../../../store/uiStore";
@@ -38,7 +39,10 @@ export const toLeadForm = (l = {}) => ({
   callNotes: l.callNotes ?? "",
   previousPitch: l.previousPitch ?? "",
   followUpPitch: l.followUpPitch ?? "",
-  priceCurrency: l.priceCurrency ?? "USD",
+  // Older leads may carry another currency; the form offers USD, AUD, CAD and EUR only.
+  priceCurrency: ["USD", "AUD", "CAD", "EUR"].includes(l.priceCurrency)
+    ? l.priceCurrency
+    : "USD",
   basicPrice: minorToInput(l.basicPriceMinor, l.priceCurrency ?? "USD") ?? "",
   premiumPrice:
     minorToInput(l.premiumPriceMinor, l.priceCurrency ?? "USD") ?? "",
@@ -214,8 +218,10 @@ export default function LeadForm({
             },
             {
               name: "priceCurrency",
-              label: "Price currency",
-              type: "currency",
+              label: "Currency",
+              type: "select",
+              placeholder: false,
+              options: LEAD_CURRENCIES,
             },
             { name: "dataCount", label: "Data count (rows)", type: "number" },
           ]}

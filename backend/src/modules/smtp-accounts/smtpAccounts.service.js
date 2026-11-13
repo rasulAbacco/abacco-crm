@@ -29,6 +29,13 @@ const PUBLIC = {
   hourlyLimit: true,
   dailyLimit: true,
   isEnabled: true,
+  pacingEnabled: true,
+  paceJitterPercent: true,
+  sendWindowStart: true,
+  sendWindowEnd: true,
+  sendDays: true,
+  sendTimezone: true,
+  nextSendAt: true,
   health: true,
   unhealthyUntil: true,
   consecutiveFailures: true,
@@ -49,6 +56,37 @@ function shape(a, usage) {
     workspaces: workspaces.map((w) => w.workspace),
     usage: usage?.[a.id] ?? null,
   };
+}
+
+const PACING_KEYS = [
+  "pacingEnabled",
+  "paceJitterPercent",
+  "sendWindowStart",
+  "sendWindowEnd",
+  "sendDays",
+  "sendTimezone",
+];
+const pacingFields = (input) =>
+  Object.fromEntries(
+    PACING_KEYS.filter((k) => input[k] !== undefined).map((k) => [k, input[k]]),
+  );
+
+/** Sending hours need both a start and an end (or neither), and they cannot be equal. */
+function checkSendWindow(v) {
+  const start = v.sendWindowStart ?? null;
+  const end = v.sendWindowEnd ?? null;
+  if (!!start !== !!end)
+    throw new AppError(
+      422,
+      "VALIDATION_ERROR",
+      "Set both a start and an end time for sending hours, or neither.",
+    );
+  if (start && start === end)
+    throw new AppError(
+      422,
+      "VALIDATION_ERROR",
+      "Sending hours cannot start and end at the same time.",
+    );
 }
 
 async function find(accountId, id, select = PUBLIC) {
@@ -129,6 +167,7 @@ export async function create(accountId, input, ctx) {
       "The hourly limit cannot be higher than the daily limit.",
     );
   const workspaceIds = await validWorkspaces(accountId, input.workspaceIds);
+  checkSendWindow(input);
   const row = await prisma.$transaction(async (tx) => {
     const a = await tx.smtpAccount.create({
       data: {
@@ -146,6 +185,7 @@ export async function create(accountId, input, ctx) {
         hourlyLimit,
         dailyLimit,
         isEnabled: input.isEnabled ?? true,
+        ...pacingFields(input),
         sesRegion:
           input.provider === "AMAZON_SES" ? sesRegionFromHost(host) : null,
         ...encrypt(id, input),
@@ -208,6 +248,13 @@ export async function update(accountId, id, input, ctx) {
       (fields.provider ?? before.provider) === "AMAZON_SES"
         ? sesRegionFromHost(fields.host)
         : null;
+  checkSendWindow({ ...before, ...fields });
+  // A new speed applies from the next email, not after a slot booked at the old speed.
+  if (
+    fields.hourlyLimit !== undefined &&
+    fields.hourlyLimit !== before.hourlyLimit
+  )
+    data.nextSendAt = null;
   const hl = fields.hourlyLimit ?? before.hourlyLimit;
   const dl = fields.dailyLimit ?? before.dailyLimit;
   if (hl > dl)

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { listQuerySchema } from "../../utils/pagination.js";
 import { countryField, timezoneField } from "../../utils/intl.js";
 import { amountField, currencyField } from "../../utils/money.js";
+import { leadCurrencyField } from "../../utils/leadCurrency.js";
 import { ccEmailsField } from "../../utils/ccEmails.js";
 
 export const LEAD_STATUSES = [
@@ -62,7 +63,7 @@ const fields = {
   followUpPitch: text(2000),
   ccEmails: ccEmailsField.optional(),
   subjectLine: text(300),
-  priceCurrency: opt(currencyField),
+  priceCurrency: opt(leadCurrencyField), // USD, AUD, CAD or EUR
   basicPrice: opt(amountField),
   premiumPrice: opt(amountField),
   dataCount: opt(z.coerce.number().int().min(0).max(2_000_000_000)),
@@ -133,7 +134,7 @@ export const importQuery = z.object({
   source: z.string().max(80).optional(),
   updateExisting: flag,
   createMissingSalesIds: flag,
-  priceCurrency: currencyField.default("USD"), // currency of the package price columns
+  priceCurrency: leadCurrencyField.default("USD"), // for rows without a Currency column
 });
 
 export const templateQuery = z.object({

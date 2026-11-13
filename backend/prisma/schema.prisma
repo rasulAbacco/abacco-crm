@@ -953,6 +953,14 @@ model SmtpAccount {
   sesRegion            String?
   hourlyLimit          Int
   dailyLimit           Int
+  // Exact pacing: emails go one interval apart (3600 s / hourlyLimit), see sendPacing.js.
+  pacingEnabled        Boolean      @default(true)
+  paceJitterPercent    Int          @default(0)
+  nextSendAt           DateTime?    @db.Timestamptz(3)
+  sendWindowStart      String? // "09:00" in sendTimezone; null = any time of day
+  sendWindowEnd        String?
+  sendDays             Int[]        @default([0, 1, 2, 3, 4, 5, 6]) // 0 = Sunday
+  sendTimezone         String?
   isEnabled            Boolean      @default(true)
   health               SmtpHealth   @default(UNTESTED)
   unhealthyUntil       DateTime?    @db.Timestamptz(3)

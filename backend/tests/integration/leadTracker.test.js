@@ -174,7 +174,11 @@ describe("lead tracker import / export", () => {
       ...HEADERS.slice(0, 3),
       "CC Mail",
       "Subject Line",
-      ...HEADERS.slice(3),
+      ...HEADERS.slice(3, 9),
+      "Basic Package Price",
+      "Premium Package Price",
+      "Currency",
+      "Data Count (Rows)",
     ];
     expect(ws.getRow(1).values.slice(1)).toEqual(EXPORT_HEADERS);
     const rows = [];
@@ -190,11 +194,76 @@ describe("lead tracker import / export", () => {
       "Not Responding",
       "Not Called",
     ]);
-    expect(alpha.slice(11)).toEqual(["1,200", "2,800", 15400]);
+    expect(alpha.slice(11)).toEqual(["1,200", "2,800", "USD", 15400]);
     const tpl = await ctx.api().get("/api/v1/leads/import-template?format=csv");
     expect(tpl.text.replace("﻿", "").trim()).toBe(
       EXPORT_HEADERS.map((h) => (/[",]/.test(h) ? `"${h}"` : h)).join(","),
     );
+  });
+});
+
+describe("lead currency (USD, AUD, CAD, EUR)", () => {
+  it("reads a Currency column per row, price symbols, and the import default", async () => {
+    const headers = [
+      "Sales ID",
+      "Client Name",
+      "Client Email",
+      "Basic Package Price",
+      "Premium Package Price",
+      "Currency",
+    ];
+    const rows = [
+      ["REP-101", "Aussie Co", "a@cur.test", "1,200", "2,500", "aud"],
+      ["REP-101", "Euro Co", "e@cur.test", "900", "", "€"],
+      ["REP-101", "Maple Co", "m@cur.test", "C$700", "", ""],
+      ["REP-101", "Plain Co", "p@cur.test", "500", "", ""],
+      ["REP-101", "Rupee Co", "r@cur.test", "500", "", "INR"],
+    ];
+    const res = await ctx
+      .api()
+      .upload(
+        "/api/v1/leads/import?priceCurrency=EUR",
+        "currency.xlsx",
+        await xlsx(rows, headers),
+      );
+    expect(res.status).toBe(200);
+    expect(res.body.data).toMatchObject({ createdCount: 4, errorCount: 1 });
+    expect(res.body.data.errors[0]).toMatchObject({ line: 6 });
+    expect(res.body.data.errors[0].message).toMatch(
+      /INR.*USD, AUD, CAD or EUR/,
+    );
+    const by = async (email) =>
+      prisma.lead.findFirst({ where: { emailNormalized: email } });
+    expect(await by("a@cur.test")).toMatchObject({
+      priceCurrency: "AUD",
+      basicPriceMinor: 120000n,
+      premiumPriceMinor: 250000n,
+    });
+    expect((await by("e@cur.test")).priceCurrency).toBe("EUR");
+    expect((await by("m@cur.test")).priceCurrency).toBe("CAD");
+    expect((await by("p@cur.test")).priceCurrency).toBe("EUR"); // import default
+  });
+
+  it("accepts only the four currencies in the lead form", async () => {
+    const ok = await ctx
+      .api(rep101.id)
+      .post("/api/v1/leads", {
+        firstName: "Cur",
+        email: "form@cur.test",
+        basicPrice: "100",
+        priceCurrency: "cad",
+      });
+    expect(ok.status).toBe(201);
+    expect(ok.body.data.priceCurrency).toBe("CAD");
+    const bad = await ctx
+      .api(rep101.id)
+      .post("/api/v1/leads", {
+        firstName: "Cur",
+        email: "form2@cur.test",
+        basicPrice: "100",
+        priceCurrency: "INR",
+      });
+    expect(bad.status).toBe(422);
   });
 });
 
@@ -209,11 +278,9 @@ describe("statuses, select-all and email audience", () => {
         "Budget",
       ]),
     );
-    const upd = await ctx
-      .api()
-      .put("/api/v1/leads/options", {
-        responseStatuses: [...opts.responseStatuses, "Budget Issue"],
-      });
+    const upd = await ctx.api().put("/api/v1/leads/options", {
+      responseStatuses: [...opts.responseStatuses, "Budget Issue"],
+    });
     expect(upd.body.data.responseStatuses).toContain("Budget Issue");
   });
 
@@ -222,13 +289,11 @@ describe("statuses, select-all and email audience", () => {
       .api()
       .get("/api/v1/leads?responseStatus=Not%20Responding");
     expect(list.body.meta.total).toBe(3);
-    const r = await ctx
-      .api(rep101.id)
-      .post("/api/v1/leads/bulk-update", {
-        all: true,
-        query: { responseStatus: "Not Responding" },
-        patch: { callStatus: "Left Voicemail" },
-      });
+    const r = await ctx.api(rep101.id).post("/api/v1/leads/bulk-update", {
+      all: true,
+      query: { responseStatus: "Not Responding" },
+      patch: { callStatus: "Left Voicemail" },
+    });
     expect(r.body.data.succeeded).toHaveLength(2);
     expect(
       await prisma.lead.count({
@@ -238,22 +303,18 @@ describe("statuses, select-all and email audience", () => {
   });
 
   it('turns all "Not Responding" leads of one Sales ID into an email list for a campaign', async () => {
-    const mixed = await ctx
-      .api()
-      .post("/api/v1/leads/email-audience", {
-        all: true,
-        query: { responseStatus: "Not Responding" },
-      });
+    const mixed = await ctx.api().post("/api/v1/leads/email-audience", {
+      all: true,
+      query: { responseStatus: "Not Responding" },
+    });
     expect(mixed.status).toBe(409);
     expect(mixed.body.error.code).toBe("MULTIPLE_SALES_IDS");
 
-    const res = await ctx
-      .api(rep101.id)
-      .post("/api/v1/leads/email-audience", {
-        all: true,
-        query: { responseStatus: "Not Responding" },
-        listName: "Not Responding follow-up",
-      });
+    const res = await ctx.api(rep101.id).post("/api/v1/leads/email-audience", {
+      all: true,
+      query: { responseStatus: "Not Responding" },
+      listName: "Not Responding follow-up",
+    });
     expect(res.status).toBe(200);
     expect(res.body.data).toMatchObject({
       added: 2,
@@ -286,19 +347,17 @@ describe("statuses, select-all and email audience", () => {
   });
 
   it("stores follow-up fields from the form", async () => {
-    const r = await ctx
-      .api(rep101.id)
-      .post("/api/v1/leads", {
-        fullName: "Beta Labs",
-        email: "hi@beta.test",
-        responseStatus: "Budget",
-        callStatus: "Call Back Later",
-        basicPrice: "1,500.50",
-        premiumPrice: "3000",
-        priceCurrency: "USD",
-        dataCount: 1200,
-        followUpPitch: "New year offer",
-      });
+    const r = await ctx.api(rep101.id).post("/api/v1/leads", {
+      fullName: "Beta Labs",
+      email: "hi@beta.test",
+      responseStatus: "Budget",
+      callStatus: "Call Back Later",
+      basicPrice: "1,500.50",
+      premiumPrice: "3000",
+      priceCurrency: "USD",
+      dataCount: 1200,
+      followUpPitch: "New year offer",
+    });
     expect(r.status).toBe(201);
     expect(r.body.data).toMatchObject({
       responseStatus: "Budget",
@@ -309,21 +368,17 @@ describe("statuses, select-all and email audience", () => {
   });
 
   it("keeps CC Mail from the form and from imports, and passes it to the email list contacts", async () => {
-    const bad = await ctx
-      .api(rep101.id)
-      .post("/api/v1/leads", {
-        fullName: "Gamma",
-        email: "g@gamma.test",
-        ccEmails: "boss@gamma.test, not-an-email",
-      });
+    const bad = await ctx.api(rep101.id).post("/api/v1/leads", {
+      fullName: "Gamma",
+      email: "g@gamma.test",
+      ccEmails: "boss@gamma.test, not-an-email",
+    });
     expect(bad.status).toBe(422);
-    const r = await ctx
-      .api(rep101.id)
-      .post("/api/v1/leads", {
-        fullName: "Gamma",
-        email: "g@gamma.test",
-        ccEmails: "Boss@Gamma.test; team@gamma.test",
-      });
+    const r = await ctx.api(rep101.id).post("/api/v1/leads", {
+      fullName: "Gamma",
+      email: "g@gamma.test",
+      ccEmails: "Boss@Gamma.test; team@gamma.test",
+    });
     expect(r.status).toBe(201);
     expect(r.body.data.ccEmails).toEqual([
       "boss@gamma.test",
@@ -361,12 +416,10 @@ describe("statuses, select-all and email audience", () => {
     expect(delta.ccEmails).toEqual(["ceo@delta.test", "ops@delta.test"]);
     expect(delta.subjectLine).toBe("PMAWM 2026 Updated Email List");
 
-    const aud = await ctx
-      .api(rep101.id)
-      .post("/api/v1/leads/email-audience", {
-        ids: [delta.id],
-        listName: "Delta",
-      });
+    const aud = await ctx.api(rep101.id).post("/api/v1/leads/email-audience", {
+      ids: [delta.id],
+      listName: "Delta",
+    });
     const contact = await prisma.contact.findFirst({
       where: {
         ownerWorkspaceId: rep101.id,
@@ -376,11 +429,9 @@ describe("statuses, select-all and email audience", () => {
     expect(aud.status).toBe(200);
     expect(contact.ccEmails).toEqual(["ceo@delta.test", "ops@delta.test"]);
     expect(contact.subjectLine).toBe("PMAWM 2026 Updated Email List");
-    const form = await ctx
-      .api(rep101.id)
-      .put(`/api/v1/leads/${delta.id}`, {
-        subjectLine: "ASCO 2026 Attendee List",
-      });
+    const form = await ctx.api(rep101.id).put(`/api/v1/leads/${delta.id}`, {
+      subjectLine: "ASCO 2026 Attendee List",
+    });
     expect(form.body.data.subjectLine).toBe("ASCO 2026 Attendee List");
   });
 });

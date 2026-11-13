@@ -66,23 +66,23 @@ function startSmtp() {
 }
 
 async function smtpAccount(extra = {}) {
-  const res = await ctx
-    .api()
-    .post("/api/v1/smtp-accounts", {
-      name: "Fake",
-      fromEmail: "sales@abacco.test",
-      fromName: "Abacco Sales",
-      provider: "CUSTOM",
-      host: "127.0.0.1",
-      port,
-      security: "NONE",
-      username: "sender",
-      password: "app-pass-123",
-      hourlyLimit: 100,
-      dailyLimit: 1000,
-      workspaceIds: [ctx.ws1.id],
-      ...extra,
-    });
+  const res = await ctx.api().post("/api/v1/smtp-accounts", {
+    name: "Fake",
+    fromEmail: "sales@abacco.test",
+    fromName: "Abacco Sales",
+    provider: "CUSTOM",
+    host: "127.0.0.1",
+    port,
+    security: "NONE",
+    username: "sender",
+    password: "app-pass-123",
+    hourlyLimit: 100,
+    dailyLimit: 1000,
+    // Most tests drain everything in one go; pacing has its own tests below.
+    pacingEnabled: false,
+    workspaceIds: [ctx.ws1.id],
+    ...extra,
+  });
   expect(res.status).toBe(201);
   return res.body.data;
 }
@@ -93,30 +93,26 @@ async function listWith(emails, countryCode) {
       .api(ctx.ws1.id)
       .post("/api/v1/email-lists", { name: `List ${Date.now()}` })
   ).body.data;
-  await ctx
-    .api(ctx.ws1.id)
-    .post(`/api/v1/email-lists/${list.id}/members`, {
-      emails: emails.map((email) => ({
-        email,
-        firstName: email.split("@")[0],
-        countryCode,
-      })),
-    });
+  await ctx.api(ctx.ws1.id).post(`/api/v1/email-lists/${list.id}/members`, {
+    emails: emails.map((email) => ({
+      email,
+      firstName: email.split("@")[0],
+      countryCode,
+    })),
+  });
   return list;
 }
 
 async function campaign(list, smtp, extra = {}) {
-  const res = await ctx
-    .api(ctx.ws1.id)
-    .post("/api/v1/campaigns", {
-      name: `C ${Date.now()}`,
-      subject: "Hello {{firstName|there}}",
-      fromName: "Abacco",
-      html: '<p>Hi {{firstName}}, see <a href="https://abacco.example/offer">our offer</a></p>',
-      listIds: [list.id],
-      smtpAccountIds: [smtp.id],
-      ...extra,
-    });
+  const res = await ctx.api(ctx.ws1.id).post("/api/v1/campaigns", {
+    name: `C ${Date.now()}`,
+    subject: "Hello {{firstName|there}}",
+    fromName: "Abacco",
+    html: '<p>Hi {{firstName}}, see <a href="https://abacco.example/offer">our offer</a></p>',
+    listIds: [list.id],
+    smtpAccountIds: [smtp.id],
+    ...extra,
+  });
   expect(res.status).toBe(201);
   return res.body.data;
 }
@@ -137,12 +133,10 @@ beforeAll(async () => {
   await resetDatabase();
   await startSmtp();
   ctx = await createAccount("mail");
-  await ctx
-    .api()
-    .put(`/api/v1/sales-ids/${ctx.ws1.id}`, {
-      senderLegalName: "Abacco Technology Pvt Ltd",
-      senderPostalAddress: "1 MG Road, Bengaluru 560001, India",
-    });
+  await ctx.api().put(`/api/v1/sales-ids/${ctx.ws1.id}`, {
+    senderLegalName: "Abacco Technology Pvt Ltd",
+    senderPostalAddress: "1 MG Road, Bengaluru 560001, India",
+  });
 });
 beforeEach(() => (inbox = []));
 afterAll(async () => {
@@ -450,12 +444,10 @@ describe("campaign sending", () => {
       fromEmail: "robertjackson.ccl@gmail.test",
       workspaceIds: [],
     });
-    const set = await ctx
-      .api()
-      .put(`/api/v1/sales-ids/${ctx.ws1.id}`, {
-        primarySmtpAccountId: main.id,
-        alternateSmtpAccountId: alt.id,
-      });
+    const set = await ctx.api().put(`/api/v1/sales-ids/${ctx.ws1.id}`, {
+      primarySmtpAccountId: main.id,
+      alternateSmtpAccountId: alt.id,
+    });
     expect(set.status).toBe(200);
     expect(set.body.data).toMatchObject({
       primarySmtp: { fromEmail: "robert.jackson@crmconnectleads.test" },
@@ -479,22 +471,18 @@ describe("campaign sending", () => {
     ]);
 
     const list = await listWith(["main1@z.test", "main2@z.test"]);
-    const res = await ctx
-      .api(ctx.ws1.id)
-      .post("/api/v1/campaigns", {
-        name: "Default sender",
-        subject: "Hi",
-        html: "<p>Hi</p>",
-        listIds: [list.id],
-      });
+    const res = await ctx.api(ctx.ws1.id).post("/api/v1/campaigns", {
+      name: "Default sender",
+      subject: "Hi",
+      html: "<p>Hi</p>",
+      listIds: [list.id],
+    });
     expect(res.body.data.smtpAccounts.map((a) => a.id)).toEqual([main.id]);
     expect(
       (
-        await ctx
-          .api(ctx.ws1.id)
-          .put(`/api/v1/campaigns/${res.body.data.id}`, {
-            smtpAccountIds: [main.id, alt.id],
-          })
+        await ctx.api(ctx.ws1.id).put(`/api/v1/campaigns/${res.body.data.id}`, {
+          smtpAccountIds: [main.id, alt.id],
+        })
       ).status,
     ).toBe(422);
 
@@ -519,12 +507,10 @@ describe("campaign sending", () => {
     await drain();
     expect(inbox).toHaveLength(1);
     expect(inbox[0].raw).toMatch(/From: .*robertjackson\.ccl@gmail\.test/);
-    await ctx
-      .api()
-      .put(`/api/v1/sales-ids/${ctx.ws1.id}`, {
-        primarySmtpAccountId: null,
-        alternateSmtpAccountId: null,
-      });
+    await ctx.api().put(`/api/v1/sales-ids/${ctx.ws1.id}`, {
+      primarySmtpAccountId: null,
+      alternateSmtpAccountId: null,
+    });
   });
 
   it("can send from another Sales ID's email only when chosen explicitly", async () => {
@@ -571,12 +557,10 @@ describe("campaign sending", () => {
   });
 
   it("adds nothing under the pitch when no company name / address is set (no visible unsubscribe link)", async () => {
-    await ctx
-      .api()
-      .put(`/api/v1/sales-ids/${ctx.ws1.id}`, {
-        senderLegalName: null,
-        senderPostalAddress: null,
-      });
+    await ctx.api().put(`/api/v1/sales-ids/${ctx.ws1.id}`, {
+      senderLegalName: null,
+      senderPostalAddress: null,
+    });
     const smtp = await smtpAccount({ fromEmail: "nofooter@abacco.test" });
     const c = await campaign(await listWith(["nf@z.test"]), smtp, {
       subject: "Follow up - {{subjectLine}}",
@@ -592,12 +576,10 @@ describe("campaign sending", () => {
     expect(inbox[0].raw).not.toMatch(/^List-Unsubscribe/m);
     expect(inbox[0].raw).not.toMatch(/border-top:1px solid #e5e7eb/);
     expect(inbox[0].raw.match(/^Subject: (.*)$/m)[1].trim()).toBe("Follow up"); // no dangling " - "
-    await ctx
-      .api()
-      .put(`/api/v1/sales-ids/${ctx.ws1.id}`, {
-        senderLegalName: "Abacco Technology Pvt Ltd",
-        senderPostalAddress: "1 MG Road, Bengaluru 560001, India",
-      });
+    await ctx.api().put(`/api/v1/sales-ids/${ctx.ws1.id}`, {
+      senderLegalName: "Abacco Technology Pvt Ltd",
+      senderPostalAddress: "1 MG Road, Bengaluru 560001, India",
+    });
     inbox = [];
   });
 
@@ -693,6 +675,135 @@ describe("campaign sending", () => {
         where: { emailNormalized: "ben@x.test", reason: "COMPLAINT" },
       }),
     ).toBe(1);
+  });
+});
+
+describe("exact sending speed (pacing)", () => {
+  // Runs one dispatcher pass and returns the emails it queued (optionally only these campaigns').
+  async function tick(now = new Date(), campaignIds) {
+    const queued = [];
+    await dispatchTick({
+      now,
+      enqueue: async (rows, opts = {}) =>
+        rows.forEach((r) => queued.push({ ...r, delayMs: opts.delayMs ?? 0 })),
+    });
+    if (!campaignIds) return queued;
+    const mine = await prisma.campaignRecipient.findMany({
+      where: { campaignId: { in: campaignIds } },
+      select: { id: true },
+    });
+    const ids = new Set(mine.map((m) => m.id));
+    return queued.filter((q) => ids.has(q.id));
+  }
+
+  it("60 per hour sends one email per minute, never two at once", async () => {
+    const smtp = await smtpAccount({
+      fromEmail: "pace60@abacco.test",
+      hourlyLimit: 60,
+      pacingEnabled: true,
+    });
+    const list = await listWith([
+      "p1@pace.test",
+      "p2@pace.test",
+      "p3@pace.test",
+    ]);
+    const c = await campaign(list, smtp);
+    await ctx.api(ctx.ws1.id).post(`/api/v1/campaigns/${c.id}/send`);
+
+    const first = await tick(new Date(), [c.id]);
+    expect(first).toHaveLength(1); // only one slot inside the next 20 s
+    expect(first[0].delayMs).toBeLessThan(1000); // the first one goes straight away
+    await processRecipient(first[0].id);
+    expect(inbox).toHaveLength(1);
+
+    expect(await tick(new Date(), [c.id])).toHaveLength(0); // next slot is a minute later
+
+    const acc = await prisma.smtpAccount.findUnique({ where: { id: smtp.id } });
+    const gap = acc.nextSendAt.getTime() - first[0].queuedAt.getTime();
+    expect(gap).toBe(60_000);
+
+    // 55 s later the next slot (at +60 s) is within reach and is queued with the exact delay.
+    const later = new Date(first[0].queuedAt.getTime() + 55_000);
+    const second = await tick(later, [c.id]);
+    expect(second).toHaveLength(1);
+    expect(second[0].queuedAt.getTime() - first[0].queuedAt.getTime()).toBe(
+      60_000,
+    );
+  });
+
+  it("two campaigns on the same account share its speed", async () => {
+    const smtp = await smtpAccount({
+      fromEmail: "pace-shared@abacco.test",
+      hourlyLimit: 1800,
+      dailyLimit: 5000,
+      pacingEnabled: true,
+    }); // one per 2 s
+    const a = await campaign(
+      await listWith(["a1@share.test", "a2@share.test"]),
+      smtp,
+    );
+    const b = await campaign(
+      await listWith(["b1@share.test", "b2@share.test"]),
+      smtp,
+    );
+    await ctx.api(ctx.ws1.id).post(`/api/v1/campaigns/${a.id}/send`);
+    await ctx.api(ctx.ws1.id).post(`/api/v1/campaigns/${b.id}/send`);
+    const queued = await tick(new Date(), [a.id, b.id]);
+    expect(queued).toHaveLength(4);
+    const times = queued.map((q) => q.queuedAt.getTime()).sort((x, y) => x - y);
+    for (let i = 1; i < times.length; i++)
+      expect(times[i] - times[i - 1]).toBe(2000);
+  });
+
+  it("waits for the account's sending days and hours", async () => {
+    const smtp = await smtpAccount({
+      fromEmail: "pace-hours@abacco.test",
+      hourlyLimit: 60,
+      pacingEnabled: true,
+      sendWindowStart: "09:00",
+      sendWindowEnd: "18:00",
+      sendDays: [1, 2, 3, 4, 5],
+      sendTimezone: "Asia/Kolkata",
+    });
+    const c = await campaign(await listWith(["h1@hours.test"]), smtp);
+    await ctx.api(ctx.ws1.id).post(`/api/v1/campaigns/${c.id}/send`);
+    // Saturday 14 Nov 2026, 10:00 IST: closed.
+    expect(await tick(new Date("2026-11-14T04:30:00Z"), [c.id])).toHaveLength(
+      0,
+    );
+    // Monday 16 Nov 2026, 09:00 IST: open.
+    expect(await tick(new Date("2026-11-16T03:30:00Z"), [c.id])).toHaveLength(
+      1,
+    );
+  });
+
+  it("rejects half-set sending hours and resets the slot when the speed changes", async () => {
+    const smtp = await smtpAccount({
+      fromEmail: "pace-edit@abacco.test",
+      hourlyLimit: 10,
+      pacingEnabled: true,
+    });
+    const bad = await ctx
+      .api()
+      .put(`/api/v1/smtp-accounts/${smtp.id}`, { sendWindowStart: "09:00" });
+    expect(bad.status).toBe(422);
+    await prisma.smtpAccount.update({
+      where: { id: smtp.id },
+      data: { nextSendAt: new Date(Date.now() + 3600_000) },
+    });
+    const res = await ctx
+      .api()
+      .put(`/api/v1/smtp-accounts/${smtp.id}`, {
+        hourlyLimit: 60,
+        sendDays: [5, 1, 1],
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.data).toMatchObject({
+      hourlyLimit: 60,
+      sendDays: [1, 5],
+      nextSendAt: null,
+      pacingEnabled: true,
+    });
   });
 });
 

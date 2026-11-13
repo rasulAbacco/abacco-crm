@@ -14,14 +14,11 @@ import { requestContext } from "../../services/audit/auditService.js";
 import { sendTable } from "../../services/files/tabularService.js";
 import { fromMinor } from "../../utils/money.js";
 
-/** "1200.00" → "1,200" ; "1200.50" → "1,200.5" (same look as the team's Excel). */
+/** "1200.00" → "1,200" ; "1200.50" → "1,200.5" (same look as the team's Excel). The currency has its own column. */
 function priceText(minor, currency) {
   if (minor === null || minor === undefined) return "";
   const n = Number(fromMinor(minor, currency));
-  const txt = new Intl.NumberFormat("en-US", {
-    maximumFractionDigits: 2,
-  }).format(n);
-  return currency && currency !== "USD" ? `${currency} ${txt}` : txt;
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(n);
 }
 
 // Exactly the columns (and order) of the team's lead tracker — import accepts the same file.
@@ -47,14 +44,15 @@ export const CLIENT_COLUMNS = [
   { key: "followUpPitch", header: "Follow Up Pitch" },
   {
     key: "basicPrice",
-    header: "Basic Package Price ($)",
+    header: "Basic Package Price",
     value: (r) => priceText(r.basicPriceMinor, r.priceCurrency),
   },
   {
     key: "premiumPrice",
-    header: "Premium Package Price ($)",
+    header: "Premium Package Price",
     value: (r) => priceText(r.premiumPriceMinor, r.priceCurrency),
   },
+  { key: "priceCurrency", header: "Currency" },
   { key: "dataCount", header: "Data Count (Rows)" },
 ];
 
