@@ -20,7 +20,11 @@ import config from "../../config/environment.js";
 import { QUEUES } from "../../queues/queueRegistry.js";
 import { enqueueSends } from "./campaign.queue.js";
 import { buildMessage } from "../../services/email/messageBuilder.js";
-import { previousFor, buildReply } from "../../services/email/thread.js";
+import {
+  previousFor,
+  buildReply,
+  applyQuoteEdit,
+} from "../../services/email/thread.js";
 import {
   getTransport,
   classifySmtpError,
@@ -409,11 +413,14 @@ export async function processRecipient(
       fromName,
       fromEmail: account.fromEmail,
     });
-    reply = buildReply(prev, {
-      timeZone:
-        campaign.ownerWorkspace.defaultTimezone ??
-        campaign.ownerWorkspace.account.defaultTimezone,
-    });
+    reply = buildReply(
+      applyQuoteEdit(prev, campaign, campaign.ownerWorkspace.name),
+      {
+        timeZone:
+          campaign.ownerWorkspace.defaultTimezone ??
+          campaign.ownerWorkspace.account.defaultTimezone,
+      },
+    );
   }
 
   const msg = buildMessage({

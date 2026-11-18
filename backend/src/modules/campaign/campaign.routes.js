@@ -25,6 +25,7 @@ router.post(
   c.followUp,
 );
 router.get("/:id/preview", p, c.preview);
+router.get("/:id/quote-source", p, c.quoteSource);
 router.post("/:id/send", p, c.send);
 router.post("/:id/pause", p, c.pause);
 router.post("/:id/resume", p, c.resume);

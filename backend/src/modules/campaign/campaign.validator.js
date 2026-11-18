@@ -39,6 +39,8 @@ const fields = {
     .optional(),
   includeCc: z.boolean().optional(),
   followUpMode: z.boolean().optional(),
+  quoteHtml: opt(z.string().max(500000)),
+  quoteSourceCampaignId: opt(z.string().uuid()),
   segmentFilter: opt(segment),
   trackOpens: z.boolean().optional(),
   trackClicks: z.boolean().optional(),

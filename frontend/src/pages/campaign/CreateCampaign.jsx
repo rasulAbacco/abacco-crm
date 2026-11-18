@@ -12,6 +12,7 @@ import SenderPicker from "./components/SenderPicker";
 import SendingSpeedControl from "./components/SendingSpeedControl";
 import FollowUpOptions from "./components/FollowUpOptions";
 import EmailPreview from "./components/EmailPreview";
+import QuotedEmailEditor from "./components/QuotedEmailEditor";
 import SubjectField from "./components/SubjectField";
 import api, { errorMessage } from "../../services/axiosInstance";
 import { useSalesIdStore } from "../../store/salesIdStore";
@@ -72,6 +73,8 @@ function blank(ws) {
     smtpAccountIds: [],
     includeCc: true,
     followUpMode: false,
+    quoteHtml: null,
+    quoteSourceCampaignId: null,
     segmentFilter: { countryCodes: [], tags: [], excludeTags: [] },
     trackOpens: true,
     trackClicks: true,
@@ -204,6 +207,10 @@ export default function CreateCampaign() {
       smtpAccountIds: c.smtpAccountIds,
       includeCc: c.includeCc,
       followUpMode: c.followUpMode,
+      quoteHtml: c.followUpMode ? (c.quoteHtml ?? null) : null,
+      quoteSourceCampaignId: c.followUpMode
+        ? (c.quoteSourceCampaignId ?? null)
+        : null,
       trackOpens: c.trackOpens,
       trackClicks: c.trackClicks,
       scheduleMode: c.scheduleMode,
@@ -692,6 +699,18 @@ export default function CreateCampaign() {
               />
             </div>
             <EmailEditor value={c.html} onChange={(html) => set({ html })} />
+            {c.followUpMode && (
+              <QuotedEmailEditor
+                key={`quote-${campaignId ?? "new"}`}
+                campaignId={campaignId}
+                salesId={c.ownerWorkspaceId}
+                ensureSaved={() => saveDraft(true)}
+                value={c.quoteHtml}
+                onChange={(quoteHtml, quoteSourceCampaignId) =>
+                  set({ quoteHtml, quoteSourceCampaignId })
+                }
+              />
+            )}
           </div>
         )}
         {step === 4 && (

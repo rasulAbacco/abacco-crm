@@ -18,6 +18,8 @@ export const remove = async (req, res) =>
   ok(res, await s.remove(req.scope, id(req), ctx(req)));
 export const duplicate = async (req, res) =>
   created(res, await s.duplicate(req.scope, id(req), ctx(req)));
+export const quoteSource = async (req, res) =>
+  ok(res, await s.quoteSource(req.scope, id(req)));
 export const followUp = async (req, res) =>
   created(
     res,

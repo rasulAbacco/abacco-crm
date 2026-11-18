@@ -162,6 +162,8 @@ function toPrev(r, workspaceName) {
   }
   return {
     source: "EMAIL",
+    campaignId: r.campaignId,
+    mergeData: r.mergeData ?? {},
     campaignName: r.campaignName,
     messageId: r.messageId,
     threadRefs: r.threadRefs,
@@ -197,7 +199,7 @@ export async function findPreviousEmails(
     SELECT DISTINCT ON (r."emailNormalized")
            r."emailNormalized", r.email, r."messageId", r."threadRefs", r."sentAt",
            r."sentSubject", r."sentHtml", r."sentText", r."sentCc", r."ccEmails", r."mergeData", r."trackingToken",
-           c.name AS "campaignName", c.subject, c.html, c.text, c."fromName",
+           c.id AS "campaignId", c.name AS "campaignName", c.subject, c.html, c.text, c."fromName",
            s."fromEmail", s."fromName" AS "smtpFromName"
       FROM campaign_recipients r
       JOIN campaigns c ON c.id = r."campaignId"
@@ -300,4 +302,44 @@ export async function conversationWith(
     opened: !!r.firstOpenedAt,
     clicked: !!r.firstClickedAt,
   }));
+}
+
+/**
+ * The follow-up's edited copy of the earlier email, when the user changed it on the Content
+ * step. Applies to recipients whose earlier email came from campaign.quoteSourceCampaignId;
+ * {{merge}} fields are filled with that recipient's own details. Anything that earlier email
+ * itself quoted (older history) stays below it unchanged.
+ */
+export function applyQuoteEdit(prev, campaign, workspaceName = "") {
+  if (
+    !prev ||
+    prev.source !== "EMAIL" ||
+    !campaign?.quoteHtml ||
+    !campaign.quoteSourceCampaignId ||
+    prev.campaignId !== campaign.quoteSourceCampaignId
+  )
+    return prev;
+  const m = prev.mergeData ?? {};
+  const vars = {
+    firstName: m.firstName,
+    lastName: m.lastName,
+    fullName: [m.firstName, m.lastName].filter(Boolean).join(" "),
+    email: prev.to,
+    company: m.company,
+    designation: m.designation,
+    city: m.city,
+    subjectLine: m.subjectLine,
+    previousPitch: m.previousPitch,
+    followUpPitch: m.followUpPitch,
+    senderName: prev.fromName,
+    salesIdName: workspaceName,
+    unsubscribeUrl: "",
+  };
+  const edited = sanitizeEmailHtml(
+    personalize(campaign.quoteHtml, vars, { html: true }),
+  );
+  const inner = bodyInner(prev.html);
+  const at = inner.indexOf('<div class="abacco-quote"');
+  const html = edited + (at >= 0 ? inner.slice(at) : "");
+  return { ...prev, html, text: htmlToText(html), edited: true };
 }

@@ -27,6 +27,7 @@ import {
   findPreviousEmails,
   previousFromPitch,
   buildReply,
+  applyQuoteEdit,
 } from "../../services/email/thread.js";
 
 const WS = { select: { id: true, code: true, name: true } };
@@ -90,6 +91,8 @@ async function toData(scope, workspaceId, input, existing) {
   const data = { ...rest };
   if (data.html !== undefined && data.html !== null)
     data.html = sanitizeEmailHtml(data.html);
+  if (data.quoteHtml !== undefined && data.quoteHtml !== null)
+    data.quoteHtml = sanitizeEmailHtml(data.quoteHtml);
   if (scheduledAt !== undefined) data.scheduledAtUtc = scheduledAt;
   if (localSendDate !== undefined)
     data.localSendDate = localSendDate
@@ -813,7 +816,11 @@ async function sampleEmail(c, workspace, account, plan) {
         ))) ||
     sendable[0];
   const prev = c.followUpMode
-    ? (prevByEmail.get(first.emailNormalized) ??
+    ? (applyQuoteEdit(
+        prevByEmail.get(first.emailNormalized),
+        c,
+        workspace.name,
+      ) ??
       previousFromPitch(first.mergeData, {
         to: first.email,
         fromName,
@@ -931,7 +938,13 @@ export async function sendTest(scope, id, { to, smtpAccountId }, ctx) {
     });
     const withPitch = people.find((p) => p.previousPitch);
     const prev =
-      [...found.values()][0] ??
+      applyQuoteEdit(
+        [...found.values()].find(
+          (p) => p.campaignId === c.quoteSourceCampaignId,
+        ) ?? [...found.values()][0],
+        c,
+        ws.name,
+      ) ??
       (withPitch
         ? previousFromPitch(withPitch, {
             to: withPitch.email,
@@ -1077,6 +1090,7 @@ export async function createFollowUp(
       ownerWorkspaceId: c.ownerWorkspaceId,
       name: listName,
       followUpMode: true,
+      quoteSourceCampaignId: id,
       subject: null,
       fromName: c.fromName ?? null,
       replyTo: c.replyTo ?? null,
@@ -1098,4 +1112,51 @@ export async function createFollowUp(
     ctx,
   });
   return { ...draft, people: contactIds.length };
+}
+
+/**
+ * Content step of a follow-up: the earlier email most of its audience is replying to, as an
+ * editable template (the follow-up's saved edit, else that campaign's own content).
+ */
+export async function quoteSource(scope, id) {
+  const c = shape(await find(scope, id));
+  const listIds = c.lists.map((l) => l.id);
+  const contacts = listIds.length ? await loadAudience(prisma, c, listIds) : [];
+  const ws = await prisma.salesWorkspace.findUnique({
+    where: { id: c.ownerWorkspaceId },
+    select: { name: true },
+  });
+  const found = await findPreviousEmails(prisma, {
+    accountId: c.accountId,
+    workspaceId: c.ownerWorkspaceId,
+    emails: contacts.map((x) => x.emailNormalized),
+    excludeCampaignId: c.id,
+    workspaceName: ws?.name ?? "",
+  });
+  const counts = new Map();
+  for (const p of found.values())
+    counts.set(p.campaignId, (counts.get(p.campaignId) ?? 0) + 1);
+  const withPitch = contacts.filter(
+    (x) =>
+      !found.has(x.emailNormalized) && String(x.previousPitch ?? "").trim(),
+  ).length;
+  const base = { total: contacts.length, withPitch };
+  if (!counts.size) return { ...base, source: null };
+  const sourceId = counts.has(c.quoteSourceCampaignId)
+    ? c.quoteSourceCampaignId
+    : [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  const src = await prisma.campaign.findUnique({
+    where: { id: sourceId },
+    select: { id: true, name: true, subject: true, html: true },
+  });
+  const edited = c.quoteSourceCampaignId === sourceId && !!c.quoteHtml;
+  return {
+    ...base,
+    source: { id: src.id, name: src.name, subject: src.subject },
+    covers: counts.get(sourceId),
+    otherEarlier: found.size - counts.get(sourceId),
+    original: src.html ?? "",
+    html: edited ? c.quoteHtml : (src.html ?? ""),
+    edited,
+  };
 }

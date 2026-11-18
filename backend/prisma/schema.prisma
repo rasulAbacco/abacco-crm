@@ -1210,6 +1210,10 @@ model Campaign {
   // Follow-up: each email replies to the last email that person got from this Sales ID
   // (quoted below, Outlook style, same thread). See services/email/thread.js.
   followUpMode         Boolean           @default(false)
+  // Optional edited copy of the earlier email being replied to (a template with {{merge}}
+  // fields). Used for recipients whose earlier email came from quoteSourceCampaignId.
+  quoteSourceCampaignId String?          @db.Uuid
+  quoteHtml            String?
   // Pitch price is typed by the user; the app never calculates or converts it.
   pitchAmountMinor     BigInt?
   pitchCurrency        String?           @db.Char(3)

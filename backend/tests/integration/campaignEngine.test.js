@@ -1033,6 +1033,70 @@ describe("follow-ups reply to the previous email (Outlook / Gmail style)", () =>
     }
   });
 
+  it("lets the user edit the quoted earlier email; each person still gets their own name", async () => {
+    const smtp = await smtpAccount({ fromEmail: "edit-quote@abacco.test" });
+    const list = await listWith(["anna@eq.test", "ben@eq.test"]);
+    const first = await campaign(list, smtp, {
+      subject: "Price list",
+      html: "<p>Hi {{firstName}},</p><p>Our list costs $900.</p><p>Old discount code SPRING10.</p>",
+    });
+    await ctx.api(ctx.ws1.id).post(`/api/v1/campaigns/${first.id}/send`);
+    await drain();
+
+    const fu = (
+      await ctx
+        .api(ctx.ws1.id)
+        .post(`/api/v1/campaigns/${first.id}/follow-up`, {})
+    ).body.data;
+    const src = await ctx
+      .api(ctx.ws1.id)
+      .get(`/api/v1/campaigns/${fu.id}/quote-source`);
+    expect(src.status).toBe(200);
+    expect(src.body.data).toMatchObject({
+      total: 2,
+      covers: 2,
+      edited: false,
+      source: { id: first.id, subject: "Price list" },
+    });
+    expect(src.body.data.html).toContain("{{firstName}}");
+
+    // Remove the old discount code from the quoted email.
+    const edited = src.body.data.html.replace(
+      "<p>Old discount code SPRING10.</p>",
+      "",
+    );
+    await ctx.api(ctx.ws1.id).put(`/api/v1/campaigns/${fu.id}`, {
+      html: "<p>Following up.</p>",
+      quoteHtml: edited,
+      quoteSourceCampaignId: first.id,
+    });
+    const again = await ctx
+      .api(ctx.ws1.id)
+      .get(`/api/v1/campaigns/${fu.id}/quote-source`);
+    expect(again.body.data.edited).toBe(true);
+    const preview = await ctx
+      .api(ctx.ws1.id)
+      .get(`/api/v1/campaigns/${fu.id}/preview`);
+    expect(preview.body.data.sample.html).not.toContain("SPRING10");
+
+    inbox = [];
+    await ctx.api(ctx.ws1.id).post(`/api/v1/campaigns/${fu.id}/send`);
+    await drain();
+    for (const [addr, name] of [
+      ["anna@eq.test", "anna"],
+      ["ben@eq.test", "ben"],
+    ]) {
+      const [m] = mailTo(addr);
+      const body = readable(m.raw);
+      expect(body).toContain("Following up.");
+      expect(body).toContain(`<b>Subject:</b> Price list`);
+      expect(body).toContain(`Hi ${name},`);
+      expect(body).toContain("Our list costs $900.");
+      expect(body).not.toContain("SPRING10");
+      expect(header(m.raw, "Subject")).toBe("RE: Price list");
+    }
+  });
+
   it("sends people with no earlier email a normal message, and a normal campaign is unchanged", async () => {
     const smtp = await smtpAccount({ fromEmail: "fresh@abacco.test" });
     const list = await listWith(["new@fresh.test"]);
