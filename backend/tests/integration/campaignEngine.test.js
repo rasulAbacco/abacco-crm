@@ -968,6 +968,71 @@ describe("follow-ups reply to the previous email (Outlook / Gmail style)", () =>
     expect(conv.body.data.emails[0].messageId).toBeUndefined();
   });
 
+  it("'Follow up' on a sent campaign makes a reply draft for the people it reached", async () => {
+    const smtp = await smtpAccount({ fromEmail: "fu-button@abacco.test" });
+    const list = await listWith(["b1@fub.test", "b2@fub.test", "b3@fub.test"]);
+    const sent = await campaign(list, smtp, {
+      name: "Test – first pitch",
+      subject: "Test - first pitch",
+    });
+
+    // Not sent yet: nothing to follow up.
+    const early = await ctx
+      .api(ctx.ws1.id)
+      .post(`/api/v1/campaigns/${sent.id}/follow-up`, {});
+    expect(early.status).toBe(422);
+
+    await ctx.api(ctx.ws1.id).post(`/api/v1/campaigns/${sent.id}/send`);
+    await drain();
+    // b1 opened it.
+    const r1 = await prisma.campaignRecipient.findFirst({
+      where: { campaignId: sent.id, emailNormalized: "b1@fub.test" },
+    });
+    await prisma.campaignRecipient.update({
+      where: { id: r1.id },
+      data: { firstOpenedAt: new Date() },
+    });
+
+    const notOpened = await ctx
+      .api(ctx.ws1.id)
+      .post(`/api/v1/campaigns/${sent.id}/follow-up`, {
+        audience: "NOT_OPENED",
+      });
+    expect(notOpened.status).toBe(201);
+    expect(notOpened.body.data).toMatchObject({
+      status: "DRAFT",
+      followUpMode: true,
+      people: 2,
+      name: "Follow-up – Test – first pitch",
+    });
+
+    const all = await ctx
+      .api(ctx.ws1.id)
+      .post(`/api/v1/campaigns/${sent.id}/follow-up`, {});
+    expect(all.body.data).toMatchObject({
+      people: 3,
+      name: "Follow-up – Test – first pitch (2)",
+    });
+    expect(all.body.data.smtpAccounts.map((a) => a.id)).toEqual([smtp.id]);
+
+    await ctx
+      .api(ctx.ws1.id)
+      .put(`/api/v1/campaigns/${all.body.data.id}`, {
+        html: "<p>Following up on this.</p>",
+      });
+    inbox = [];
+    const go = await ctx
+      .api(ctx.ws1.id)
+      .post(`/api/v1/campaigns/${all.body.data.id}/send`);
+    expect(go.status).toBe(200);
+    await drain();
+    expect(inbox).toHaveLength(3);
+    for (const m of inbox) {
+      expect(header(m.raw, "Subject")).toBe("RE: Test - first pitch");
+      expect(header(m.raw, "In-Reply-To")).toBeTruthy();
+    }
+  });
+
   it("sends people with no earlier email a normal message, and a normal campaign is unchanged", async () => {
     const smtp = await smtpAccount({ fromEmail: "fresh@abacco.test" });
     const list = await listWith(["new@fresh.test"]);

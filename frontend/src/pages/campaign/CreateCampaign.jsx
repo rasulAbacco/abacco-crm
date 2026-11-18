@@ -118,7 +118,16 @@ export default function CreateCampaign() {
     (s) =>
       s.user?.timezone ?? s.user?.account?.defaultTimezone ?? "Asia/Kolkata",
   );
-  const [step, setStep] = useState(0);
+  // ?step=3 opens a new follow-up draft straight at the Content step.
+  const [step, setStep] = useState(() =>
+    Math.min(
+      Math.max(
+        Number(new URLSearchParams(window.location.search).get("step")) || 0,
+        0,
+      ),
+      4,
+    ),
+  );
   // Opened from Leads → "Email selected": preselect that Sales ID and list.
   const [search] = useSearchParams();
   const [c, setC] = useState(() => {

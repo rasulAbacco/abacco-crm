@@ -1002,3 +1002,100 @@ export async function eligibleSmtp(scope, workspaceId) {
   if (!id) return [];
   return eligibleSmtpAccounts(prisma, scope.accountId, id);
 }
+
+/**
+ * "Follow up" on a sent campaign: makes a new draft that replies to it.
+ * audience: "SENT" (everyone it reached) or "NOT_OPENED" (reached, no recorded open).
+ * The people are put on a new email list; the draft keeps the sender, From name, reply-to,
+ * CC and tracking settings, with follow-up mode on and the subject left as "RE:".
+ */
+export async function createFollowUp(
+  scope,
+  id,
+  { audience = "SENT" } = {},
+  ctx,
+) {
+  const c = shape(await find(scope, id));
+  const rows = await prisma.campaignRecipient.findMany({
+    where: {
+      campaignId: id,
+      status: "SENT",
+      contactId: { not: null },
+      contact: { deletedAt: null },
+      ...(audience === "NOT_OPENED" ? { firstOpenedAt: null } : {}),
+    },
+    select: { contactId: true },
+  });
+  const contactIds = [...new Set(rows.map((r) => r.contactId))];
+  if (!contactIds.length)
+    throw new AppError(
+      422,
+      "NOTHING_TO_FOLLOW_UP",
+      audience === "NOT_OPENED"
+        ? "Everyone who received this campaign has opened it, so there is no one to follow up."
+        : "Nobody has received this campaign yet. Follow up once emails show as Sent.",
+    );
+
+  const base = `Follow-up – ${c.name}`.slice(0, 110);
+  let listName = base;
+  for (
+    let n = 2;
+    await prisma.emailList.count({
+      where: {
+        ownerWorkspaceId: c.ownerWorkspaceId,
+        name: listName,
+        deletedAt: null,
+      },
+    });
+    n++
+  )
+    listName = `${base} (${n})`;
+
+  const list = await prisma.$transaction(async (tx) => {
+    const l = await tx.emailList.create({
+      data: {
+        accountId: c.accountId,
+        ownerWorkspaceId: c.ownerWorkspaceId,
+        name: listName,
+        description: `${audience === "NOT_OPENED" ? "Did not open" : "Received"} "${c.name}"`,
+      },
+    });
+    await tx.emailListContact.createMany({
+      data: contactIds.map((contactId) => ({
+        listId: l.id,
+        contactId,
+        source: "campaign",
+      })),
+      skipDuplicates: true,
+    });
+    return l;
+  });
+
+  const draft = await create(
+    scope,
+    {
+      ownerWorkspaceId: c.ownerWorkspaceId,
+      name: listName,
+      followUpMode: true,
+      subject: null,
+      fromName: c.fromName ?? null,
+      replyTo: c.replyTo ?? null,
+      listIds: [list.id],
+      smtpAccountIds: c.smtpAccounts.map((s) => s.id),
+      includeCc: c.includeCc,
+      trackOpens: c.trackOpens,
+      trackClicks: c.trackClicks,
+    },
+    ctx,
+  );
+  await writeAudit({
+    accountId: c.accountId,
+    workspaceId: c.ownerWorkspaceId,
+    action: "campaign.follow_up",
+    entityType: "Campaign",
+    entityId: draft.id,
+    metadata: { of: id, audience, people: contactIds.length },
+    ctx,
+  });
+  return { ...draft, people: contactIds.length };
+}

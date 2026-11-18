@@ -10,9 +10,11 @@ import {
   FiBarChart2,
   FiEdit2,
   FiTrash2,
+  FiCornerUpLeft,
 } from "react-icons/fi";
 import { campaignService } from "./services/campaignService";
 import SendingSpeedControl from "./components/SendingSpeedControl";
+import FollowUpDialog from "./components/FollowUpDialog";
 import { useApi } from "../../hooks/useApi";
 import DataTable from "../../components/common/DataTable";
 import {
@@ -179,6 +181,14 @@ export default function CampaignDetails() {
             <button className="btn-secondary" onClick={() => act("duplicate")}>
               <FiCopy /> Duplicate
             </button>
+            {s?.counts.SENT > 0 && (
+              <button
+                className="btn-primary"
+                onClick={() => setConfirm("follow-up")}
+              >
+                <FiCornerUpLeft /> Follow up
+              </button>
+            )}
             {!["SCHEDULED", "QUEUED", "SENDING", "PAUSED"].includes(
               c.status,
             ) && (
@@ -420,6 +430,15 @@ export default function CampaignDetails() {
         onClose={() => setConfirm(null)}
         onConfirm={() => act("retry-failed")}
       />
+      {s && (
+        <FollowUpDialog
+          open={confirm === "follow-up"}
+          onClose={() => setConfirm(null)}
+          campaign={c}
+          sent={s.counts.SENT ?? 0}
+          opened={s.uniqueOpens ?? 0}
+        />
+      )}
       <ConfirmDialog
         open={confirm === "delete"}
         title="Delete this campaign?"

@@ -88,3 +88,7 @@ export const testSchema = z
     smtpAccountId: z.string().uuid().optional(),
   })
   .strict();
+
+export const followUpSchema = z
+  .object({ audience: z.enum(["SENT", "NOT_OPENED"]).default("SENT") })
+  .strict();
