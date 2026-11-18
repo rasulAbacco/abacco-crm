@@ -294,6 +294,10 @@ export default function CampaignDetails() {
                     : "Immediately",
               ],
               ["Business hours only", c.respectBusinessHours ? "Yes" : "No"],
+              [
+                "Follow-up",
+                c.followUpMode ? "Yes, replies to the previous email" : "No",
+              ],
               ["Lists", c.lists.map((l) => l.name).join(", ")],
               ["SMTP accounts", c.smtpAccounts.map((a) => a.name).join(", ")],
               [

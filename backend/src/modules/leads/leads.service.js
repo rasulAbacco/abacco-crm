@@ -13,6 +13,7 @@ import { resolveWriteWorkspace } from "../../middleware/salesIdMiddleware.js";
 import { writeAudit } from "../../services/audit/auditService.js";
 import { toMinor } from "../../utils/money.js";
 import { resolveRowCurrency } from "../../utils/leadCurrency.js";
+import { conversationWith } from "../../services/email/thread.js";
 import { parseUpload, pick } from "../../services/files/tabularService.js";
 import { publish } from "../../services/events/eventBus.js";
 import { buildScopeWhere } from "../../utils/scope.js";
@@ -356,12 +357,20 @@ export async function buildEmailAudience(scope, ids, listName, ctx) {
           select: { id: true },
         });
         // The lead's CC and subject line follow it onto the contact the campaign sends to.
-        if (c && (l.ccEmails?.length || l.subjectLine)) {
+        if (
+          c &&
+          (l.ccEmails?.length ||
+            l.subjectLine ||
+            l.previousPitch ||
+            l.followUpPitch)
+        ) {
           await tx.contact.update({
             where: { id: c.id },
             data: {
               ...(l.ccEmails?.length ? { ccEmails: l.ccEmails } : {}),
               ...(l.subjectLine ? { subjectLine: l.subjectLine } : {}),
+              ...(l.previousPitch ? { previousPitch: l.previousPitch } : {}),
+              ...(l.followUpPitch ? { followUpPitch: l.followUpPitch } : {}),
             },
           });
         }
@@ -386,6 +395,8 @@ export async function buildEmailAudience(scope, ids, listName, ctx) {
               source: "Lead",
               ccEmails: l.ccEmails ?? [],
               subjectLine: l.subjectLine ?? null,
+              previousPitch: l.previousPitch ?? null,
+              followUpPitch: l.followUpPitch ?? null,
             },
             select: { id: true },
           });
@@ -912,5 +923,31 @@ export async function importLeads(scope, file, opts, ctx) {
     createdSalesIds,
     missingSalesIds: [...missingSalesIds],
     newStatuses: { response: newResponse, call: newCall },
+  };
+}
+
+/**
+ * The email conversation with a lead: every campaign email its Sales ID sent to the lead's
+ * address (newest first), plus the "Previous pitch" from the tracker when one is saved.
+ * Visibility follows the lead itself (owner or shared Sales IDs).
+ */
+export async function leadConversation(scope, id) {
+  const lead = await leadService.get(scope, id);
+  const ws = await prisma.salesWorkspace.findUnique({
+    where: { id: lead.ownerWorkspaceId },
+    select: { name: true },
+  });
+  const emails = await conversationWith(prisma, {
+    accountId: lead.accountId,
+    workspaceId: lead.ownerWorkspaceId,
+    email: lead.emailNormalized,
+    workspaceName: ws?.name ?? "",
+  });
+  return {
+    email: lead.email,
+    emails: emails.map(({ messageId, threadRefs, ...e }) => e),
+    previousPitch: lead.previousPitch
+      ? { subject: lead.subjectLine ?? null, text: lead.previousPitch }
+      : null,
   };
 }

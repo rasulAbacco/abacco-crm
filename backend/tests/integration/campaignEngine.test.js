@@ -767,14 +767,13 @@ describe("exact sending speed (pacing)", () => {
     });
     const c = await campaign(await listWith(["h1@hours.test"]), smtp);
     await ctx.api(ctx.ws1.id).post(`/api/v1/campaigns/${c.id}/send`);
-    // Saturday 14 Nov 2026, 10:00 IST: closed.
-    expect(await tick(new Date("2026-11-14T04:30:00Z"), [c.id])).toHaveLength(
-      0,
-    );
-    // Monday 16 Nov 2026, 09:00 IST: open.
-    expect(await tick(new Date("2026-11-16T03:30:00Z"), [c.id])).toHaveLength(
-      1,
-    );
+    // Next Saturday 10:00 IST (04:30 UTC): closed. The Monday after, 09:00 IST (03:30 UTC): open.
+    const sat = new Date();
+    sat.setUTCDate(sat.getUTCDate() + ((6 - sat.getUTCDay() + 7) % 7 || 7));
+    sat.setUTCHours(4, 30, 0, 0);
+    const mon = new Date(sat.getTime() + 2 * 86400000 - 3600000);
+    expect(await tick(sat, [c.id])).toHaveLength(0);
+    expect(await tick(mon, [c.id])).toHaveLength(1);
   });
 
   it("rejects half-set sending hours and resets the slot when the speed changes", async () => {
@@ -791,12 +790,10 @@ describe("exact sending speed (pacing)", () => {
       where: { id: smtp.id },
       data: { nextSendAt: new Date(Date.now() + 3600_000) },
     });
-    const res = await ctx
-      .api()
-      .put(`/api/v1/smtp-accounts/${smtp.id}`, {
-        hourlyLimit: 60,
-        sendDays: [5, 1, 1],
-      });
+    const res = await ctx.api().put(`/api/v1/smtp-accounts/${smtp.id}`, {
+      hourlyLimit: 60,
+      sendDays: [5, 1, 1],
+    });
     expect(res.status).toBe(200);
     expect(res.body.data).toMatchObject({
       hourlyLimit: 60,
@@ -804,6 +801,200 @@ describe("exact sending speed (pacing)", () => {
       nextSendAt: null,
       pacingEnabled: true,
     });
+  });
+});
+
+describe("follow-ups reply to the previous email (Outlook / Gmail style)", () => {
+  // Raw message -> readable text (undo quoted-printable line wrapping and =XX escapes).
+  const readable = (raw) =>
+    raw
+      .replace(/=\r?\n/g, "")
+      .replace(/=([0-9A-F]{2})/g, (_, h) =>
+        String.fromCharCode(parseInt(h, 16)),
+      );
+  const header = (raw, name) =>
+    new RegExp(`^${name}:\\s*(.+(?:\\r?\\n[ \\t].+)*)`, "mi")
+      .exec(raw)?.[1]
+      ?.replace(/\r?\n[ \t]+/g, " ")
+      .trim();
+  const mailTo = (addr) => inbox.filter((m) => m.to.includes(addr));
+
+  it("quotes the last email, replies with RE: and stays in the same thread", async () => {
+    const smtp = await smtpAccount({ fromEmail: "thread@abacco.test" });
+    const list = await listWith(["t1@thread.test"]);
+    const first = await campaign(list, smtp, {
+      subject: "Healthcare data for {{firstName}}",
+      html: "<p>Hi {{firstName}}, we have 40,000 verified healthcare contacts.</p>",
+    });
+    await ctx.api(ctx.ws1.id).post(`/api/v1/campaigns/${first.id}/send`);
+    await drain();
+    expect(mailTo("t1@thread.test")).toHaveLength(1);
+    const firstId = header(mailTo("t1@thread.test")[0].raw, "Message-ID");
+
+    // Follow-up with no subject: it should reply under the first email.
+    const second = await campaign(list, smtp, {
+      subject: null,
+      followUpMode: true,
+      html: "<p>Just following up on my note below.</p>",
+    });
+    const preview = await ctx
+      .api(ctx.ws1.id)
+      .get(`/api/v1/campaigns/${second.id}/preview`);
+    expect(preview.body.data.issues).toEqual([]);
+    expect(preview.body.data.summary.followUp).toEqual({
+      withEmail: 1,
+      withPitch: 0,
+      none: 0,
+    });
+    expect(preview.body.data.sample.subject).toBe("RE: Healthcare data for t1");
+    expect(preview.body.data.sample.html).toContain(
+      "40,000 verified healthcare contacts",
+    );
+    expect(preview.body.data.sample.quoted).toMatchObject({
+      source: "EMAIL",
+      subject: "Healthcare data for t1",
+    });
+
+    inbox = [];
+    await ctx.api(ctx.ws1.id).post(`/api/v1/campaigns/${second.id}/send`);
+    await drain();
+    const [reply] = mailTo("t1@thread.test");
+    expect(header(reply.raw, "Subject")).toBe("RE: Healthcare data for t1");
+    expect(header(reply.raw, "In-Reply-To")).toBe(firstId);
+    expect(header(reply.raw, "References")).toBe(firstId);
+    const body = readable(reply.raw);
+    expect(body).toContain("Just following up on my note below.");
+    expect(body).toMatch(/<b>From:<\/b> Abacco &lt;thread@abacco\.test&gt;/);
+    expect(body).toMatch(
+      /<b>Sent:<\/b> \w+day, \w+ \d{1,2}, \d{4} \d{1,2}:\d{2} (AM|PM)/,
+    );
+    expect(body).toContain("<b>Subject:</b> Healthcare data for t1");
+    expect(body).toContain("40,000 verified healthcare contacts");
+    // New text comes before the quoted one, like Outlook.
+    expect(body.indexOf("Just following up")).toBeLessThan(
+      body.indexOf("40,000 verified"),
+    );
+    // Plain-text part quotes it too.
+    expect(body).toContain("________________________________");
+
+    // A second follow-up quotes the whole conversation and keeps both IDs in References.
+    const secondId = header(reply.raw, "Message-ID");
+    const third = await campaign(list, smtp, {
+      subject: null,
+      followUpMode: true,
+      html: "<p>Any update?</p>",
+    });
+    inbox = [];
+    await ctx.api(ctx.ws1.id).post(`/api/v1/campaigns/${third.id}/send`);
+    await drain();
+    const [again] = mailTo("t1@thread.test");
+    expect(header(again.raw, "Subject")).toBe("RE: Healthcare data for t1");
+    expect(header(again.raw, "In-Reply-To")).toBe(secondId);
+    expect(header(again.raw, "References")).toBe(`${firstId} ${secondId}`);
+    const all = readable(again.raw);
+    expect(all.indexOf("Any update?")).toBeLessThan(
+      all.indexOf("Just following up"),
+    );
+    expect(all.indexOf("Just following up")).toBeLessThan(
+      all.indexOf("40,000 verified"),
+    );
+  });
+
+  it("quotes the lead's previous pitch when the CRM never emailed them", async () => {
+    const smtp = await smtpAccount({ fromEmail: "pitch@abacco.test" });
+    const lead = await ctx.api(ctx.ws1.id).post("/api/v1/leads", {
+      firstName: "Maria",
+      email: "maria@pitch.test",
+      subjectLine: "Dental practices list",
+      previousPitch:
+        "Hi Maria,\nWe have 12,500 dental practice contacts.\n\nRegards, Robert",
+      followUpPitch: "Did you get a chance to look?",
+    });
+    expect(lead.status).toBe(201);
+    const aud = await ctx
+      .api(ctx.ws1.id)
+      .post("/api/v1/leads/email-audience", {
+        ids: [lead.body.data.id],
+        listName: "Pitch follow-up",
+      });
+    expect(aud.status).toBe(200);
+    const c = await campaign({ id: aud.body.data.listId }, smtp, {
+      subject: null,
+      followUpMode: true,
+      html: "<p>{{followUpPitch}}</p>",
+    });
+    const preview = await ctx
+      .api(ctx.ws1.id)
+      .get(`/api/v1/campaigns/${c.id}/preview`);
+    expect(preview.body.data.summary.followUp).toEqual({
+      withEmail: 0,
+      withPitch: 1,
+      none: 0,
+    });
+    expect(preview.body.data.sample.quoted).toMatchObject({
+      source: "PITCH",
+      subject: "Dental practices list",
+    });
+
+    await ctx.api(ctx.ws1.id).post(`/api/v1/campaigns/${c.id}/send`);
+    await drain();
+    const [mail] = mailTo("maria@pitch.test");
+    expect(header(mail.raw, "Subject")).toBe("RE: Dental practices list");
+    expect(header(mail.raw, "In-Reply-To")).toBeUndefined(); // nothing to thread under
+    const body = readable(mail.raw);
+    expect(body).toContain("Did you get a chance to look?");
+    expect(body).toContain(
+      "Hi Maria,<br>We have 12,500 dental practice contacts.",
+    );
+    expect(body).toContain("<b>Subject:</b> Dental practices list");
+
+    // The lead page shows the conversation.
+    const conv = await ctx
+      .api(ctx.ws1.id)
+      .get(`/api/v1/leads/${lead.body.data.id}/conversation`);
+    expect(conv.status).toBe(200);
+    expect(conv.body.data.previousPitch).toMatchObject({
+      subject: "Dental practices list",
+    });
+    expect(conv.body.data.emails).toHaveLength(1);
+    expect(conv.body.data.emails[0]).toMatchObject({
+      subject: "RE: Dental practices list",
+      fromEmail: "pitch@abacco.test",
+      status: "SENT",
+    });
+    expect(conv.body.data.emails[0].html).toContain(
+      "Did you get a chance to look?",
+    );
+    expect(conv.body.data.emails[0].messageId).toBeUndefined();
+  });
+
+  it("sends people with no earlier email a normal message, and a normal campaign is unchanged", async () => {
+    const smtp = await smtpAccount({ fromEmail: "fresh@abacco.test" });
+    const list = await listWith(["new@fresh.test"]);
+    const c = await campaign(list, smtp, {
+      followUpMode: true,
+      subject: "Quick question",
+    });
+    const preview = await ctx
+      .api(ctx.ws1.id)
+      .get(`/api/v1/campaigns/${c.id}/preview`);
+    expect(preview.body.data.summary.followUp).toEqual({
+      withEmail: 0,
+      withPitch: 0,
+      none: 1,
+    });
+    await ctx.api(ctx.ws1.id).post(`/api/v1/campaigns/${c.id}/send`);
+    await drain();
+    const [mail] = mailTo("new@fresh.test");
+    expect(header(mail.raw, "Subject")).toBe("Quick question");
+    expect(readable(mail.raw)).not.toContain("<b>From:</b>");
+
+    // Without follow-up mode a subject is still required.
+    const plain = await campaign(list, smtp, { subject: null });
+    const p2 = await ctx
+      .api(ctx.ws1.id)
+      .get(`/api/v1/campaigns/${plain.id}/preview`);
+    expect(p2.body.data.issues).toContain("Add a subject line.");
   });
 });
 

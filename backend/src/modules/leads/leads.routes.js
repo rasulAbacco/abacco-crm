@@ -26,6 +26,11 @@ export default buildRecordRouter(c, v, (router) => {
     validate({ body: v.audienceSchema }),
     c.emailAudience,
   );
+  router.get(
+    "/:id/conversation",
+    validate({ params: idParams }),
+    c.conversation,
+  );
   router.post(
     "/:id/convert",
     validate({ params: idParams, body: v.convertSchema }),

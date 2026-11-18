@@ -20,6 +20,7 @@ import config from "../../config/environment.js";
 import { QUEUES } from "../../queues/queueRegistry.js";
 import { enqueueSends } from "./campaign.queue.js";
 import { buildMessage } from "../../services/email/messageBuilder.js";
+import { previousFor, buildReply } from "../../services/email/thread.js";
 import {
   getTransport,
   classifySmtpError,
@@ -397,17 +398,32 @@ export async function processRecipient(
     data: { messageId, smtpAccountId: account.id },
   });
 
-  const msg = buildMessage({
-    campaign: {
-      ...campaign,
+  const fromName = campaign.fromName ?? account.fromName;
+  // Follow-up: reply under the last email this person got (or the lead's previous pitch).
+  let reply = null;
+  if (campaign.followUpMode) {
+    const prev = await previousFor(prisma, {
+      campaign,
+      recipient,
+      workspaceName: campaign.ownerWorkspace.name,
+      fromName,
       fromEmail: account.fromEmail,
-      fromName: campaign.fromName ?? account.fromName,
-    },
+    });
+    reply = buildReply(prev, {
+      timeZone:
+        campaign.ownerWorkspace.defaultTimezone ??
+        campaign.ownerWorkspace.account.defaultTimezone,
+    });
+  }
+
+  const msg = buildMessage({
+    campaign: { ...campaign, fromEmail: account.fromEmail, fromName },
     recipient,
     workspace: campaign.ownerWorkspace,
     account: campaign.ownerWorkspace.account,
     links: new Map(campaign.links.map((l) => [l.url, l.id])),
     messageId,
+    reply,
   });
   if (cc.length) msg.cc = cc;
 
@@ -423,6 +439,13 @@ export async function processRecipient(
           lockedAt: null,
           lockedBy: null,
           lastError: null,
+          // Kept so the next follow-up can quote exactly this email in the same thread.
+          sentSubject: msg.archive.subject,
+          sentHtml: msg.archive.html,
+          sentText: msg.archive.text,
+          sentCc: cc,
+          inReplyTo: reply?.inReplyTo ?? null,
+          threadRefs: reply?.references ?? null,
         },
       }),
       prisma.emailEvent.create({

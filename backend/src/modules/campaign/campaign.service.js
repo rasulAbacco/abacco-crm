@@ -23,6 +23,11 @@ import {
   campaignStats,
 } from "./campaign.repository.js";
 import { nudgeDispatcher } from "./campaign.queue.js";
+import {
+  findPreviousEmails,
+  previousFromPitch,
+  buildReply,
+} from "../../services/email/thread.js";
 
 const WS = { select: { id: true, code: true, name: true } };
 const scopeWhere = (scope) => ({
@@ -316,6 +321,7 @@ export async function duplicate(scope, id, ctx) {
   const fields = [
     "description",
     "subject",
+    "followUpMode",
     "preheader",
     "fromName",
     "replyTo",
@@ -356,7 +362,8 @@ export async function duplicate(scope, id, ctx) {
 
 async function readiness(c) {
   const issues = [];
-  if (!c.subject) issues.push("Add a subject line.");
+  // A follow-up may leave the subject empty: it then replies with "RE: <earlier subject>".
+  if (!c.subject && !c.followUpMode) issues.push("Add a subject line.");
   if (!c.html || !c.html.replace(/<[^>]*>/g, "").trim())
     issues.push("Add the email content.");
   if (!c.lists.length) issues.push("Choose at least one recipient list.");
@@ -449,9 +456,12 @@ export async function preview(scope, id) {
         'Every recipient is excluded (suppressed, no consent, or past send time). See "Excluded" below.',
       );
   }
+  const sample = await sampleEmail(c, workspace, account, plan);
+  if (sample?.followUp) summary.followUp = sample.followUp;
   return {
     issues,
     summary,
+    sample: sample?.message ?? null,
     capacityPerDay,
     estimatedDays: capacityPerDay
       ? Math.ceil(summary.sendable / capacityPerDay)
@@ -758,10 +768,95 @@ export async function recipients(scope, id, q) {
   return { items, total };
 }
 
+/**
+ * How the first email will look (with the quoted earlier email for follow-ups), and for
+ * follow-ups how many recipients have an earlier CRM email, only a previous pitch, or nothing.
+ */
+async function sampleEmail(c, workspace, account, plan) {
+  const sendable = plan.filter((r) => r.status === "PENDING");
+  if (!sendable.length || !c.html) return null;
+  const smtpId = c.smtpAccounts[0]?.id;
+  const smtp = smtpId
+    ? await prisma.smtpAccount.findUnique({
+        where: { id: smtpId },
+        select: { fromEmail: true, fromName: true },
+      })
+    : null;
+  const fromEmail = smtp?.fromEmail ?? "sender@example.com";
+  const fromName = c.fromName ?? smtp?.fromName ?? null;
+  const timeZone = workspace.defaultTimezone ?? account.defaultTimezone;
+
+  let followUp = null;
+  let prevByEmail = new Map();
+  if (c.followUpMode) {
+    prevByEmail = await findPreviousEmails(prisma, {
+      accountId: c.accountId,
+      workspaceId: c.ownerWorkspaceId,
+      emails: sendable.map((r) => r.emailNormalized),
+      excludeCampaignId: c.id,
+      workspaceName: workspace.name,
+    });
+    followUp = { withEmail: 0, withPitch: 0, none: 0 };
+    for (const r of sendable) {
+      if (prevByEmail.has(r.emailNormalized)) followUp.withEmail++;
+      else if (String(r.mergeData?.previousPitch ?? "").trim())
+        followUp.withPitch++;
+      else followUp.none++;
+    }
+  }
+  // Show someone who actually has an earlier email, when there is one.
+  const first =
+    (c.followUpMode &&
+      (sendable.find((r) => prevByEmail.has(r.emailNormalized)) ??
+        sendable.find((r) =>
+          String(r.mergeData?.previousPitch ?? "").trim(),
+        ))) ||
+    sendable[0];
+  const prev = c.followUpMode
+    ? (prevByEmail.get(first.emailNormalized) ??
+      previousFromPitch(first.mergeData, {
+        to: first.email,
+        fromName,
+        fromEmail,
+      }))
+    : null;
+  const msg = buildMessage({
+    campaign: {
+      ...c,
+      fromEmail,
+      fromName,
+      trackOpens: false,
+      trackClicks: false,
+    },
+    recipient: { ...first, trackingToken: "preview" },
+    workspace,
+    account,
+    reply: buildReply(prev, { timeZone }),
+  });
+  return {
+    followUp,
+    message: {
+      to: first.email,
+      cc: first.ccEmails ?? [],
+      from: fromName ? `${fromName} <${fromEmail}>` : fromEmail,
+      subject: msg.subject,
+      html: msg.archive.html,
+      quoted: prev
+        ? {
+            source: prev.source,
+            subject: prev.subject,
+            sentAt: prev.sentAt,
+            campaignName: prev.campaignName ?? null,
+          }
+        : null,
+    },
+  };
+}
+
 /** Sends a preview to up to 5 addresses through one of the campaign's SMTP accounts. No tracking. */
 export async function sendTest(scope, id, { to, smtpAccountId }, ctx) {
   const c = shape(await find(scope, id));
-  if (!c.subject || !c.html)
+  if ((!c.subject && !c.followUpMode) || !c.html)
     throw new AppError(
       422,
       "CAMPAIGN_NOT_READY",
@@ -805,6 +900,50 @@ export async function sendTest(scope, id, { to, smtpAccountId }, ctx) {
     },
     select: { subjectLine: true },
   });
+  let testReply = null;
+  if (c.followUpMode) {
+    const listIds = (c.lists ?? [])
+      .map((l) => l.listId ?? l.list?.id ?? l.id)
+      .filter(Boolean);
+    const members = await prisma.emailListContact.findMany({
+      where: { listId: { in: listIds }, status: "SUBSCRIBED" },
+      select: {
+        contact: {
+          select: {
+            email: true,
+            emailNormalized: true,
+            previousPitch: true,
+            subjectLine: true,
+          },
+        },
+      },
+      take: 200,
+    });
+    const people = members
+      .map((m) => m.contact)
+      .filter((p) => p.emailNormalized);
+    const found = await findPreviousEmails(prisma, {
+      accountId: c.accountId,
+      workspaceId: c.ownerWorkspaceId,
+      emails: people.map((p) => p.emailNormalized),
+      excludeCampaignId: c.id,
+      workspaceName: ws.name,
+    });
+    const withPitch = people.find((p) => p.previousPitch);
+    const prev =
+      [...found.values()][0] ??
+      (withPitch
+        ? previousFromPitch(withPitch, {
+            to: withPitch.email,
+            fromName: c.fromName ?? smtp.fromName,
+            fromEmail: smtp.fromEmail,
+          })
+        : null);
+    const r = buildReply(prev, {
+      timeZone: ws.defaultTimezone ?? ws.account.defaultTimezone,
+    });
+    if (r) testReply = { quote: r.quote, subject: r.subject };
+  }
   const results = [];
   for (const email of to) {
     const slot = await reserveSlot(smtp, `test:${id}:${email}:${Date.now()}`);
@@ -835,6 +974,7 @@ export async function sendTest(scope, id, { to, smtpAccountId }, ctx) {
       },
       workspace: ws,
       account: ws.account,
+      reply: testReply,
     });
     msg.subject = `[Test] ${msg.subject}`;
     try {

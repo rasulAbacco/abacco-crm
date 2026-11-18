@@ -530,6 +530,8 @@ model Contact {
   phoneRaw         String?
   ccEmails         String[]       @default([]) // copied on every campaign email to this contact
   subjectLine      String? // this client's email subject; campaigns reuse it via {{subjectLine}}
+  previousPitch    String? // copied from the lead: the last pitch sent outside the CRM (quoted by follow-ups)
+  followUpPitch    String? // copied from the lead: usable in a campaign as {{followUpPitch}}
   designation      String?
   countryCode      String?        @db.Char(2)
   region           String?
@@ -1205,6 +1207,9 @@ model Campaign {
   pastTimeBehaviour    PastTimeBehaviour @default(NEXT_DAY)
   respectBusinessHours Boolean           @default(false)
   includeCc            Boolean           @default(true) // copy each contact's CC addresses
+  // Follow-up: each email replies to the last email that person got from this Sales ID
+  // (quoted below, Outlook style, same thread). See services/email/thread.js.
+  followUpMode         Boolean           @default(false)
   // Pitch price is typed by the user; the app never calculates or converts it.
   pitchAmountMinor     BigInt?
   pitchCurrency        String?           @db.Char(3)
@@ -1265,6 +1270,13 @@ model CampaignRecipient {
   emailNormalized   String
   mergeData         Json? // snapshot of firstName, lastName, company … at enqueue time
   ccEmails          String[]        @default([]) // snapshot of the contact's CC addresses
+  // What was actually sent (so a later follow-up can quote it and thread under it).
+  sentSubject       String?
+  sentHtml          String? // body without the tracking pixel; includes any quoted earlier emails
+  sentText          String?
+  sentCc            String[]        @default([])
+  inReplyTo         String? // Message-ID this email replied to (follow-ups)
+  threadRefs        String? // References header used (space-separated Message-IDs)
   countryCode       String?         @db.Char(2)
   recipientTimezone String?
   scheduledAtUtc    DateTime?       @db.Timestamptz(3)
@@ -1297,6 +1309,7 @@ model CampaignRecipient {
   @@index([status, scheduledAtUtc])
   @@index([status, lockedAt])
   @@index([messageId])
+  @@index([emailNormalized, sentAt])
   @@map("campaign_recipients")
 }
 

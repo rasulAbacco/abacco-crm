@@ -26,6 +26,7 @@ import { formatDate, formatDateTime, formatMoney } from "../../utils/format";
 import { errorMessage } from "../../services/axiosInstance";
 import { toast } from "../../store/uiStore";
 import TaskQuickAdd from "../tasks/components/TaskQuickAdd";
+import EmailConversation from "./components/EmailConversation";
 
 function ConvertModal({ lead, open, onClose, onDone }) {
   const [withDeal, setWithDeal] = useState(true);
@@ -76,9 +77,10 @@ function ConvertModal({ lead, open, onClose, onDone }) {
     >
       <p className="mb-4 text-sm text-ink-700">
         Creates a contact
-        {lead.companyName ? ` and the company “${lead.companyName}”` : ""} in{" "}
-        {lead.ownerWorkspace.code}. If a contact with this email already exists
-        it is linked instead.
+        {lead.companyName
+          ? ` and the company “${lead.companyName}”`
+          : ""} in {lead.ownerWorkspace.code}. If a contact with this email
+        already exists it is linked instead.
       </p>
       <Checkbox
         label="Also create a deal"
@@ -260,6 +262,7 @@ export default function LeadDetails() {
               onChange={setTab}
               tabs={[
                 { value: "activity", label: "Notes & activity" },
+                { value: "emails", label: "Email conversation" },
                 { value: "tasks", label: "Follow-ups", count: l.tasks.length },
                 { value: "deals", label: "Deals", count: l.deals.length },
               ]}
@@ -272,6 +275,7 @@ export default function LeadDetails() {
                 canEdit={canEdit}
               />
             )}
+            {tab === "emails" && <EmailConversation leadId={id} />}
             {tab === "tasks" && (
               <TaskQuickAdd
                 link={{ leadId: id }}

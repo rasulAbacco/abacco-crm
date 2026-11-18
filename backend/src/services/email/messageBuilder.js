@@ -16,8 +16,14 @@ export const MERGE_FIELDS = [
   "country",
   "senderName",
   "salesIdName",
+  "subjectLine",
+  "followUpPitch",
+  "previousPitch",
   "unsubscribeUrl",
 ];
+
+// Plain-text fields typed in Excel: their line breaks are kept in the HTML email.
+const MULTILINE = new Set(["followUpPitch", "previousPitch"]);
 
 const escapeHtml = (s) =>
   String(s ?? "").replace(
@@ -39,7 +45,9 @@ export function personalize(template, vars, { html = false } = {}) {
         v === undefined || v === null || v === ""
           ? (fallback ?? "").trim()
           : String(v);
-      return html && key !== "unsubscribeUrl" ? escapeHtml(out) : out;
+      if (!html || key === "unsubscribeUrl") return out;
+      const safe = escapeHtml(out);
+      return MULTILINE.has(key) ? safe.replace(/\r?\n/g, "<br>") : safe;
     },
   );
 }
@@ -128,6 +136,8 @@ export function mergeVars(recipient, { workspace, campaign }) {
     designation: m.designation,
     city: m.city,
     subjectLine: m.subjectLine, // the lead's / contact's own subject line
+    previousPitch: m.previousPitch,
+    followUpPitch: m.followUpPitch,
     country: recipient.countryCode,
     senderName: campaign.fromName,
     salesIdName: workspace.name,
@@ -168,8 +178,13 @@ export function finalSubject(template, vars, fallback = "") {
 }
 
 /**
- * campaign: { subject, html, text, fromName, fromEmail, replyTo, trackOpens, trackClicks }
+ * campaign: { subject, html, text, fromName, fromEmail, replyTo, trackOpens, trackClicks, followUpMode }
  * links: Map(url → trackedLinkId)
+ * reply (follow-ups): { quote: { html, text }, subject, inReplyTo, references } — see thread.js
+ *
+ * The returned message also carries a non-enumerable `archive` ({ subject, html, text }):
+ * the email as sent, without the tracking pixel or tracked links, kept so a later
+ * follow-up can quote it exactly.
  */
 export function buildMessage({
   campaign,
@@ -178,47 +193,71 @@ export function buildMessage({
   account,
   links = new Map(),
   messageId,
+  reply = null,
 }) {
   const vars = mergeVars(recipient, { workspace, campaign });
   const base = config.API_PUBLIC_URL;
-  let html = personalize(campaign.html, vars, { html: true });
-  if (campaign.trackClicks && links.size) {
-    html = html.replace(
-      /(<a\b[^>]*\bhref\s*=\s*["'])([^"']+)(["'])/gi,
-      (all, pre, href, post) => {
-        const id = links.get(href.trim());
-        return id
-          ? `${pre}${base}/t/c/${recipient.trackingToken}/${id}${post}`
-          : all;
-      },
-    );
-  }
+  const personalized = personalize(campaign.html, vars, { html: true });
+  const tracked =
+    campaign.trackClicks && links.size
+      ? personalized.replace(
+          /(<a\b[^>]*\bhref\s*=\s*["'])([^"']+)(["'])/gi,
+          (all, pre, href, post) => {
+            const id = links.get(href.trim());
+            return id
+              ? `${pre}${base}/t/c/${recipient.trackingToken}/${id}${post}`
+              : all;
+          },
+        )
+      : personalized;
   const f = footer({ workspace, account });
   const pixel = campaign.trackOpens
     ? `<img src="${base}/t/o/${recipient.trackingToken}.gif" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0">`
     : "";
   const hasUnsub = /\{\{\s*unsubscribeUrl/.test(campaign.html ?? "");
-  const finalHtml = /<\/body>/i.test(html)
-    ? html.replace(/<\/body>/i, `${hasUnsub ? "" : f.html}${pixel}</body>`)
-    : `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:0"><div style="max-width:640px;margin:0 auto;padding:16px">${html}${hasUnsub ? "" : f.html}</div>${pixel}</body></html>`;
+  const quote = reply?.quote ?? { html: "", text: "" };
+  // New message, then the footer (like a signature), then the quoted earlier email.
+  const assemble = (html, px) => {
+    const tail = `${hasUnsub ? "" : f.html}${quote.html}`;
+    return /<\/body>/i.test(html)
+      ? html.replace(/<\/body>/i, `${tail}${px}</body>`)
+      : `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:0"><div style="max-width:640px;margin:0 auto;padding:16px">${html}${tail}</div>${px}</body></html>`;
+  };
   const text =
     (campaign.text
       ? personalize(campaign.text, vars)
-      : htmlToText(personalize(campaign.html, vars))) +
-    (hasUnsub ? "" : f.text);
+      : htmlToText(personalized)) +
+    (hasUnsub ? "" : f.text) +
+    quote.text;
 
-  return {
+  // Subject: the campaign's own; a follow-up left blank replies with "RE: <earlier subject>".
+  const own = finalSubject(campaign.subject ?? "", vars, "");
+  const subject =
+    own ||
+    (campaign.followUpMode && reply?.subject) ||
+    finalSubject("{{subjectLine}}", vars, "") ||
+    campaign.name ||
+    "";
+
+  const msg = {
     from: campaign.fromName
       ? { name: campaign.fromName, address: campaign.fromEmail }
       : campaign.fromEmail,
     to: recipient.email,
     replyTo: campaign.replyTo || undefined,
-    subject: finalSubject(campaign.subject, vars, campaign.name ?? ""),
-    html: finalHtml,
+    subject,
+    html: assemble(tracked, pixel),
     text,
     messageId,
+    ...(reply?.inReplyTo ? { inReplyTo: reply.inReplyTo } : {}),
+    ...(reply?.references ? { references: reply.references } : {}),
     headers: {
       "X-Abacco-Recipient": recipient.trackingToken,
     },
   };
+  Object.defineProperty(msg, "archive", {
+    enumerable: false,
+    value: { subject, html: assemble(personalized, ""), text },
+  });
+  return msg;
 }

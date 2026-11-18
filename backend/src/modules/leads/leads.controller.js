@@ -6,6 +6,7 @@ import {
   getOptions,
   setOptions,
   buildEmailAudience,
+  leadConversation,
 } from "./leads.service.js";
 import { listQuery as leadListQuery } from "./leads.validator.js";
 import { createRecordController } from "../../services/records/recordController.js";
@@ -118,6 +119,8 @@ export default {
   importFile: async (req, res) =>
     ok(res, await importLeads(req.scope, req.file, req.valid.query, ctx(req))),
   options: async (req, res) => ok(res, await getOptions(req.accountId)),
+  conversation: async (req, res) =>
+    ok(res, await leadConversation(req.scope, req.valid.params.id)),
   updateOptions: async (req, res) =>
     ok(res, await setOptions(req.accountId, req.valid.body, ctx(req))),
   emailAudience: async (req, res) => {

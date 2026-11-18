@@ -10,6 +10,8 @@ import { FiArrowLeft, FiCheck, FiSend, FiSave, FiTrash2 } from "react-icons/fi";
 import { campaignService } from "./services/campaignService";
 import SenderPicker from "./components/SenderPicker";
 import SendingSpeedControl from "./components/SendingSpeedControl";
+import FollowUpOptions from "./components/FollowUpOptions";
+import EmailPreview from "./components/EmailPreview";
 import SubjectField from "./components/SubjectField";
 import api, { errorMessage } from "../../services/axiosInstance";
 import { useSalesIdStore } from "../../store/salesIdStore";
@@ -69,6 +71,7 @@ function blank(ws) {
     listIds: [],
     smtpAccountIds: [],
     includeCc: true,
+    followUpMode: false,
     segmentFilter: { countryCodes: [], tags: [], excludeTags: [] },
     trackOpens: true,
     trackClicks: true,
@@ -123,6 +126,7 @@ export default function CreateCampaign() {
     const presetWs = search.get("salesId");
     const presetList = search.get("listId");
     const base = blank(presetWs || (selected !== "all" ? selected : ""));
+    if (search.get("followUp") === "1") base.followUpMode = true;
     if (presetList) {
       base.listIds = [presetList];
       base.name = search.get("name")
@@ -141,6 +145,8 @@ export default function CreateCampaign() {
   const [testTo, setTestTo] = useState("");
   const [segCountry, setSegCountry] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // Follow-up subject: null = not decided yet (derived from the saved subject).
+  const [ownFollowSubject, setOwnFollowSubject] = useState(null);
   const set = (patch) => setC((x) => ({ ...x, ...patch }));
 
   useEffect(() => {
@@ -188,6 +194,7 @@ export default function CreateCampaign() {
       listIds: c.listIds,
       smtpAccountIds: c.smtpAccountIds,
       includeCc: c.includeCc,
+      followUpMode: c.followUpMode,
       trackOpens: c.trackOpens,
       trackClicks: c.trackClicks,
       scheduleMode: c.scheduleMode,
@@ -321,7 +328,7 @@ export default function CreateCampaign() {
       !!c.name && !!c.ownerWorkspaceId,
       c.listIds.length > 0,
       c.smtpAccountIds.length > 0,
-      !!c.subject && !!c.html,
+      (!!c.subject || c.followUpMode) && !!c.html,
       true,
     ][step] ?? true;
   const toggle = (k, v) =>
@@ -613,12 +620,50 @@ export default function CreateCampaign() {
                 options={templates.map((t) => [t.id, t.name])}
                 placeholder="Blank"
               />
-              <SubjectField
-                key={c.id ?? "new"}
-                value={c.subject}
-                onChange={(subject) => set({ subject })}
-                preferOwn={!!search.get("listId")}
-              />
+              {(() => {
+                const replySubject =
+                  c.followUpMode && !(ownFollowSubject ?? !!c.subject);
+                return (
+                  <>
+                    <div className="sm:col-span-2">
+                      <FollowUpOptions
+                        enabled={!!c.followUpMode}
+                        onToggle={(v) => {
+                          set({
+                            followUpMode: v,
+                            ...(v && !ownFollowSubject ? { subject: "" } : {}),
+                          });
+                          if (v) setOwnFollowSubject(false);
+                        }}
+                        replySubject={replySubject}
+                        onReplySubject={(r) => {
+                          setOwnFollowSubject(!r);
+                          if (r) set({ subject: "" });
+                        }}
+                        onInsertPitch={() =>
+                          set({
+                            html: `${c.html ?? ""}<p>{{followUpPitch}}</p>`,
+                          })
+                        }
+                      />
+                    </div>
+                    {replySubject ? (
+                      <div className="sm:col-span-2 rounded-lg border border-dashed border-ink-300 px-3 py-2 text-sm text-ink-700">
+                        Subject: <b>RE:</b> + the subject of the email being
+                        replied to, e.g.{" "}
+                        <i>RE: PMAWM 2026 Updated Email List</i>
+                      </div>
+                    ) : (
+                      <SubjectField
+                        key={`${c.id ?? "new"}-${c.followUpMode ? "f" : "n"}`}
+                        value={c.subject}
+                        onChange={(subject) => set({ subject })}
+                        preferOwn={!!search.get("listId")}
+                      />
+                    )}
+                  </>
+                );
+              })()}
               <TextInput
                 label="Preheader (inbox preview text)"
                 value={c.preheader}
@@ -752,6 +797,10 @@ export default function CreateCampaign() {
                 account={sender}
                 count={preview.summary.sendable}
                 onSaved={updateSender}
+              />
+              <EmailPreview
+                sample={preview.sample}
+                followUp={preview.summary.followUp}
               />
               <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                 <div className="rounded-lg border border-ink-200 p-3">

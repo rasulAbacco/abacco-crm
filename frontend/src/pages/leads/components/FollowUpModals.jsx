@@ -82,6 +82,7 @@ export function EmailLeadsModal({ open, onClose, target, count, defaultName }) {
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [followUp, setFollowUp] = useState(false);
   useEffect(() => {
     if (open) {
       setName(defaultName);
@@ -98,7 +99,7 @@ export function EmailLeadsModal({ open, onClose, target, count, defaultName }) {
         `List "${d.listName}" ready: ${d.added} people${d.skippedNoEmail ? ` (${d.skippedNoEmail} without email skipped)` : ""}`,
       );
       navigate(
-        `/campaigns/new?listId=${d.listId}&salesId=${d.workspace.id}&name=${encodeURIComponent(d.listName)}`,
+        `/campaigns/new?listId=${d.listId}&salesId=${d.workspace.id}&name=${encodeURIComponent(d.listName)}${followUp ? "&followUp=1" : ""}`,
       );
     } catch (err) {
       setError(errorMessage(err));
@@ -138,6 +139,22 @@ export function EmailLeadsModal({ open, onClose, target, count, defaultName }) {
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
+        <label className="flex items-start gap-2 rounded-lg border border-ink-200 p-3 text-sm">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={followUp}
+            onChange={(e) => setFollowUp(e.target.checked)}
+          />
+          <span>
+            <span className="font-medium">This is a follow-up</span>
+            <span className="block text-xs text-ink-500">
+              Each email replies to the last email the lead got (or their
+              Previous pitch), quoted below your message in the same thread,
+              like Reply in Outlook or Gmail.
+            </span>
+          </span>
+        </label>
         <p className="text-xs text-ink-500">
           A campaign is sent from one Sales ID. If the leads belong to several
           Sales IDs, select one Sales ID at the top first. Unsubscribed and

@@ -95,6 +95,8 @@ export async function loadAudience(db, campaign, listIds) {
           emailNormalized: true,
           ccEmails: true,
           subjectLine: true,
+          previousPitch: true,
+          followUpPitch: true,
           firstName: true,
           lastName: true,
           designation: true,
@@ -168,6 +170,8 @@ export async function planRecipients(
         designation: c.designation,
         city: c.city,
         subjectLine: c.subjectLine,
+        previousPitch: c.previousPitch,
+        followUpPitch: c.followUpPitch,
       },
       ccEmails:
         campaign.includeCc === false

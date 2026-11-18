@@ -38,6 +38,7 @@ const fields = {
     .max(1, "Choose one email account to send from.")
     .optional(),
   includeCc: z.boolean().optional(),
+  followUpMode: z.boolean().optional(),
   segmentFilter: opt(segment),
   trackOpens: z.boolean().optional(),
   trackClicks: z.boolean().optional(),
